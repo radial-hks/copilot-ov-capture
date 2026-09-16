@@ -25,6 +25,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync, rea
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 const HARNESS = "copilot";
 const OV_SESSION_PREFIX = `import__${HARNESS}__`;
@@ -80,6 +81,90 @@ function gitUserPeerId(cwd) {
     if (email) return safePeerId(email);
   } catch { /* not a repo / no git identity */ }
   return "copilot-local-user";
+}
+
+// ----------------------------------------------------- workspace peer ----
+// Derives the OpenViking workspace peer for a session cwd, following the
+// official client design (docs: configuration/02-client "工作区配置"):
+//   1. <root>/.openviking/config.json (or config.local.json) `peer.id` wins.
+//   2. Default peer.source "git": normalized origin remote -> host-org-repo,
+//      falling back to the repo root path; pure file reads (no git subprocess).
+//      Non-git, non-configured dirs resolve to "" (no peer) — their memories
+//      stay user-level, so scratch dirs never mint empty peer namespaces.
+// The workspace root walk also mirrors the official rule: nearest ancestor
+// containing .git OR .openviking/config.json (config.local.json).
+
+const MAX_PEER_ID_LENGTH = 100;
+
+function shortHash(value) {
+  return createHash("sha256").update(String(value)).digest("hex").slice(0, 12);
+}
+
+function normalizeGitRemote(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return "";
+  // Windows drive paths are directories, not remotes.
+  if (/^[A-Za-z]:[\\/]/.test(raw)) return "";
+  let u = raw.replace(/^[a-z]+@/i, "");
+  if (u.startsWith("ssh://")) u = u.slice("ssh://".length).replace(/^git@/, "");
+  u = u.replace(/^[a-z+.\-]+:\/\//i, (m) => (m.toLowerCase().startsWith("file:") ? "" : ""));
+  // scp-like syntax git@host:path -> host/path
+  if (!u.includes("://") && /^[^\/]+:[^\/]/.test(u)) u = u.replace(":", "/");
+  // strip userinfo and trailing .git
+  u = u.replace(/^[^@/]+@/, "").replace(/\/+$/, "").replace(/\.git$/, "");
+  return u.toLowerCase();
+}
+
+function readWorkspaceConfig(root) {
+  for (const name of ["config.local.json", "config.json"]) {
+    const p = join(root, ".openviking", name);
+    try {
+      const conf = JSON.parse(readFileSync(p, "utf8"));
+      const pid = conf && conf.peer && typeof conf.peer.id === "string" ? conf.peer.id.trim() : "";
+      if (pid) return pid;
+    } catch { /* missing or malformed file */ }
+  }
+  return "";
+}
+
+function findWorkspaceRoot(startDir) {
+  let dir = startDir;
+  while (true) {
+    const hasMarker = existsSync(join(dir, ".git")) ||
+      existsSync(join(dir, ".openviking", "config.json")) ||
+      existsSync(join(dir, ".openviking", "config.local.json"));
+    if (hasMarker) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+function originRemoteFromGitConfig(root) {
+  try {
+    const raw = readFileSync(join(root, ".git", "config"), "utf8");
+    const m = raw.match(/\[remote "origin"\][\s\S]*?url\s*=\s*(\S+)/);
+    return m ? m[1] : "";
+  } catch { return ""; }
+}
+
+/** Official-style workspace peer for a session cwd. "" = no peer (user-level). */
+export function workspacePeerId(cwd) {
+  if (!cwd) return "";
+  const root = findWorkspaceRoot(cwd);
+  if (!root) return "";
+  const configured = readWorkspaceConfig(root);
+  if (configured) return safePeerId(configured);
+  // peer.source default "git": origin, then repo root; non-git -> no peer.
+  if (!existsSync(join(root, ".git"))) return "";
+  const origin = normalizeGitRemote(originRemoteFromGitConfig(root));
+  const raw = origin || root;
+  const cleaned = safePeerId(raw);
+  if (!cleaned) return "";
+  if (cleaned.length > MAX_PEER_ID_LENGTH) {
+    return `${cleaned.slice(0, MAX_PEER_ID_LENGTH - 13).replace(/[-.]+$/, "")}-${shortHash(raw)}`;
+  }
+  return cleaned;
 }
 
 // ---------------------------------------------------------- transcript ----
@@ -166,12 +251,13 @@ function ovSessionId(sessionId) {
   return OV_SESSION_PREFIX + sessionId;
 }
 
-async function ovRequest(cfg, method, path, body) {
+async function ovRequest(cfg, method, path, body, headers = {}) {
   const res = await fetch(cfg.url + path, {
     method,
     headers: {
       "Authorization": `Bearer ${cfg.apiKey}`,
       "Content-Type": "application/json",
+      ...headers,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -186,12 +272,12 @@ async function ovRequest(cfg, method, path, body) {
   return json;
 }
 
-async function ensureSession(cfg, sessionId) {
+async function ensureSession(cfg, sessionId, headers = {}) {
   try {
-    return await ovRequest(cfg, "GET", `/api/v1/sessions/${encodeURIComponent(sessionId)}`);
+    return await ovRequest(cfg, "GET", `/api/v1/sessions/${encodeURIComponent(sessionId)}`, undefined, headers);
   } catch (e) {
     if (e.status === 404) {
-      return ovRequest(cfg, "POST", "/api/v1/sessions", { session_id: sessionId });
+      return ovRequest(cfg, "POST", "/api/v1/sessions", { session_id: sessionId }, headers);
     }
     throw e;
   }
@@ -219,10 +305,15 @@ async function uploadSession(cfg, sessionId, transcriptPath, cwd, { dryRun = fal
     log(`session ${sessionId}: no new events (offset ${offset})`);
     return { added: 0, committed: false };
   }
-  const userPeerId = cwd ? gitUserPeerId(cwd) : "copilot-local-user";
+  // Workspace peer: derived from the session cwd per the official client design
+  // (.openviking/config.json peer.id > git origin > repo root; "" = user-level).
+  const wsPeer = workspacePeerId(cwd);
+  const userPeerId = wsPeer || gitUserPeerId(cwd);
+  const peerHeaders = wsPeer ? { "X-OpenViking-Actor-Peer": wsPeer } : {};
   const messages = extractMessages(events, userPeerId);
   if (dryRun) {
     console.log(`[dry-run] session ${sessionId}: ${events.length} events -> ${messages.length} turns (offset ${offset} -> ${newOffset})`);
+    console.log(`  workspace peer: ${wsPeer || "(none - user-level)"}`);
     for (const m of messages) console.log(`  ${m.role.padEnd(9)} peer=${m.peer_id} ${m.text.slice(0, 80).replace(/\n/g, " ")}`);
     return { added: messages.length, committed: false };
   }
@@ -234,21 +325,22 @@ async function uploadSession(cfg, sessionId, transcriptPath, cwd, { dryRun = fal
   }
 
   const ovSid = ovSessionId(sessionId);
-  await ensureSession(cfg, ovSid);
+  await ensureSession(cfg, ovSid, peerHeaders);
 
   let added = 0;
   for (let start = 0; start < messages.length; start += BATCH_CAP) {
     const chunk = messages.slice(start, start + BATCH_CAP).map(toPayload);
     const res = await ovRequest(cfg, "POST",
       `/api/v1/sessions/${encodeURIComponent(ovSid)}/messages/batch`,
-      { messages: chunk });
+      { messages: chunk }, peerHeaders);
     added += Number((res && res.result && res.result.added) != null ? res.result.added : chunk.length);
   }
-  await ovRequest(cfg, "POST", `/api/v1/sessions/${encodeURIComponent(ovSid)}/commit`, { keep_recent_count: 0 });
+  await ovRequest(cfg, "POST", `/api/v1/sessions/${encodeURIComponent(ovSid)}/commit`,
+    { keep_recent_count: 0 }, peerHeaders);
 
   mkdirSync(STATE_DIR, { recursive: true });
   writeFileSync(statePath, JSON.stringify({ byte_offset: newOffset }));
-  log(`session ${sessionId}: +${added} messages, committed (offset ${offset} -> ${newOffset})`);
+  log(`session ${sessionId}: +${added} messages, committed (offset ${offset} -> ${newOffset})${wsPeer ? `, peer=${wsPeer}` : ""}`);
   return { added, committed: true };
 }
 
@@ -318,9 +410,11 @@ async function main() {
     const sessionId = args[sIdx + 1];
     const tIdx = args.indexOf("--transcript-dir");
     const dir = tIdx >= 0 ? args[tIdx + 1] : join(SESSION_STATE_ROOT, sessionId);
+    const cIdx = args.indexOf("--cwd");
+    const cwd = cIdx >= 0 ? args[cIdx + 1] : null;
     const file = /events\.jsonl$/i.test(dir) ? dir : join(dir, "events.jsonl");
     if (!existsSync(file)) { log(`session ${sessionId}: transcript missing (${file})`); process.exit(0); }
-    await uploadSession(cfg, sessionId, file, null, { dryRun });
+    await uploadSession(cfg, sessionId, file, cwd, { dryRun });
     return;
   }
   await processQueue(cfg, { dryRun });

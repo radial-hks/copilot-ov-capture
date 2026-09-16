@@ -59,6 +59,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -ApiKey <你的u
 - **显式沉淀**：会话中随时说"把这个经验 remember 到 openviking"——适合你想确保入库的结论
 - **Studio**：`http://10.67.8.199:1933/studio`，user key 登录，可看/搜自己的全部记忆与会话
 
+### 按项目精准召回（workspace peer）
+
+捕获管线会从会话所在目录推导**工作区 peer**（与官方 ovcli 工作区配置同语义），项目经验自动归拢到 `peers/<peer_id>/` 下，实现按代码仓库隔离的记忆：
+
+- **有 origin 的仓库**：无需任何配置。peer 取归一化的 origin URL（如 `github.com-org-repo`），同一仓库的所有 clone、所有协作者机器推导出同一个 peer，项目记忆自动聚合
+- **想自定义**：仓库根建 `.openviking/config.json` 提交进 git，全团队生效：
+  ```json
+  {"version": 1, "peer": {"id": "my-project"}}
+  ```
+- **非 git 目录 / 临时目录**：不发 peer，记忆进用户级空间（避免为每个临时目录铸造空 peer）
+- 凭据类键（url/api_key）写进工作区配置会被剥离——服务器地址永远只看 ovcli.conf
+
+**MCP 召回侧**（Copilot 对话中调 openviking 工具）默认是全量召回（其他 peer 命中自动降分垫底）。如需严格的项目隔离召回，把 `ovcli.conf` 加 `actor_peer_id` 字段（对整个用户生效）或按会话设 `OPENVIKING_PEER_ID` 环境变量。工作区级 `recall.peer_scope` 精细控制在 MCP 代理路线暂不可用（代理是长驻进程，无法按工作区切换），这是官方已知边界。
+
 ### 数据去向（隐私边界）
 
 | 内容 | 上传时机 |
