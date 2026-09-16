@@ -28,14 +28,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -ApiKey <你的u
 - 写凭据 `%USERPROFILE%\.openviking\ovcli.conf`（`url` + `api_key`；MCP 代理与捕获上传器共用，**不进任何 git 仓库**）
 - 合并 VS Code **用户级** settings.json：`chat.plugins.enabled: true` + `chat.pluginLocations` 指向插件目录（自动探测真实 user-data 目录，含自定义 `--user-data-dir` 场景）
 
-### 3. 验证
+### 3. 验证（两条命令）
+
+```powershell
+# 一键自诊断：Node/凭据/连通/鉴权/peer/捕获管线/VS Code 注册 9 项检查
+node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\ov-doctor.mjs
+```
+
+应全绿（`VS Code 插件注册` 一项需先完成下面第 4 步）。然后：
 
 1. VS Code：`Ctrl+Shift+P` → **Developer: Reload Window**
 2. Copilot Chat（Agent 模式）问：`列出你的 MCP 工具，并用 openviking 的 health 检查服务状态`
    - ✅ 预期：报告 openviking server healthy
-3. 语义召回测试：`用 openviking 的 search 工具搜"eidcolorcontrol"相关经验`
-   - ✅ 预期：返回团队库中该定制功能的案例
-4. 自动捕获测试：随便问一个实质问题（如"帮我看下这段代码"），会话结束后查看：
+3. **自动召回验证**（核心新功能）：在新会话问一个和团队历史工作相关的问题，如"eidcolorcontrol 当时怎么做的"——Copilot 会自动带上相关记忆上下文（`Developer: Show Agent Debug Logs` 可看到 `<openviking-context>` 注入）
+4. 自动捕获验证：随便问一个实质问题，会话结束后：
    ```powershell
    Get-Content %USERPROFILE%\.openviking\copilot-capture\uploader.log -Tail 5
    ```
@@ -54,10 +60,28 @@ powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -ApiKey <你的u
 
 ## 二、日常使用
 
-- **什么都不用做**：会话结束后 Stop hook 自动触发捕获，记忆提取由服务端异步完成（1-2 分钟）
-- **检索**：Copilot 里直接说"用 openviking 搜一下 XXX 的经验"（或依赖 openviking-memory 技能自动触发）
+### 自动召回（新，核心体验）
+
+**每条 prompt 发出前自动执行**：插件从团队记忆库检索相关经验（按当前仓库的 peer 定向），把最相关的条目注入为 `<openviking-context>` 上下文块——Copilot 无需调用任何工具就能"记得"团队之前踩过的坑、做过的方案。
+
+- 检索限定工作区 peer + 阈值过滤，只注入强相关内容（弱相关命中自动丢弃）
+- 服务器不可达时静默跳过，**绝不阻塞你的提问**
+- 问历史相关问题时，Copilot 的回答会自然带上团队经验（不用再手动"搜一下 openviking"）
+
+### 其他日常
+
+- **会话自动捕获**：会话结束后 Stop hook 自动触发，记忆提取由服务端异步完成（1-2 分钟）
+- **手动检索**：Copilot 里说"用 openviking 搜一下 XXX"（openviking MCP 工具）
 - **显式沉淀**：会话中随时说"把这个经验 remember 到 openviking"——适合你想确保入库的结论
 - **Studio**：`http://10.67.8.199:1933/studio`，user key 登录，可看/搜自己的全部记忆与会话
+
+### 出问题怎么办（自诊断）
+
+```powershell
+node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\ov-doctor.mjs
+```
+
+9 项体检（Node / 凭据 / 连通 / 鉴权 / peer / 队列 / 游标 / 上传日志 / VS Code 注册），FAIL 项自带修复提示。先把 doctor 结果发给管理员，而不是截图聊天窗口。
 
 ### 按项目精准召回（workspace peer）
 
@@ -108,17 +132,31 @@ plugin/                          # Agent Plugins 1.0 包（分发单元）
 ├── servers/                     # 官方 mcp-proxy.mjs + shared（勿改，上游同步）
 ├── skills/                      # 官方 openviking-memory / ov-memory-troubleshoot（勿改）
 ├── scripts/
+│   ├── auto-recall.mjs          # UserPromptSubmit：检索+注入 <openviking-context>
 │   ├── capture.ps1              # Stop hook：UTF-8 读事件→入队→分离启动 uploader
-│   └── uploader.mjs             # 游标增量解析 transcript→提取文本→OV 会话 API
+│   ├── uploader.mjs             # 游标增量解析 transcript→提取文本→OV 会话 API
+│   └── ov-doctor.mjs            # 9 项自诊断（对齐官方 ov-memory-doctor）
 └── com.github.copilot/
-    └── hooks/hooks.json         # ${PLUGIN_ROOT} 引用 capture.ps1（无硬编码路径）
+    └── hooks/hooks.json         # ${PLUGIN_ROOT} 引用（无硬编码路径）
 
 install.ps1                      # 组员安装器（拷贝+凭据+VS Code settings 合并）
 ```
 
+### 与官方 Claude Code 插件的对照
+
+本插件功能对标官方 `examples/claude-code-memory-plugin`（Auto-Recall/Auto-Capture/Pending Queue/Doctor），差异点：
+
+| 能力 | 官方 CC 插件 | 本插件 |
+|---|---|---|
+| 自动召回 | UserPromptSubmit → additionalContext | 同机制（VS Code hooks 同名字段） |
+| 自动捕获 | Stop + PreCompact + SessionEnd | Stop（Copilot 转录文件即会话终态，PreCompact 无对应事件） |
+| 离线队列 | pending 目录 + 重试预算/TTL | queue.jsonl + 下次 Stop 重试（简化实现） |
+| 自诊断 | ov-memory-doctor skill + 脚本 | ov-doctor.mjs（9 项） |
+| 部署形态 | Claude marketplace | Agent Plugins 1.0 + install.ps1 |
+
 - **hook 快 / uploader 慢分离**：hook <1s 只追加队列；上传分离进程（hooks 要求 <5s）
 - **幂等**：字节偏移游标（`state\<session_id>.json`）+ OV 会话 ID `import__copilot__<id>`；重跑/崩溃/双启动不重不漏
-- **提取策略**对齐官方 ingest：user/assistant 文本保留，tool I/O 丢弃，peer_id 取 `copilot/<model>` 与 git email
+- **提取策略**对齐官方 ingest：user/assistant 文本保留，tool I/O 丢弃，peer_id 取 `copilot/<model>` 与工作区 peer
 - 官方上游同步：`servers/` 与 `skills/` 来自 volcengine/OpenViking `agent-plugins/`，升级时整目录覆盖
 
 ### transcript 格式风险
