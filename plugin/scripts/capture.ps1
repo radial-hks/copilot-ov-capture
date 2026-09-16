@@ -1,14 +1,17 @@
-# OpenViking x Copilot capture hook (Stop event).
-# Fast path (this script, target < 1s): read event JSON from stdin as UTF-8,
-# append {session_id, transcript_path, cwd, timestamp} to the capture queue,
-# then launch the uploader DETACHED so the hook returns immediately.
-# The uploader drains the queue idempotently (per-session byte-offset cursors),
-# so double-launches, crashes and offline servers lose nothing.
+# OpenViking x Copilot capture hook (Stop event) — plugin edition.
+# Paths resolved via the PLUGIN_ROOT environment variable that VS Code sets
+# for hook processes (no hardcoded user directories).
+#
+# Fast path (< 1s): read event JSON from stdin as UTF-8, append
+# {session_id, transcript_path, cwd} to the capture queue, then launch the
+# uploader DETACHED. The uploader drains the queue idempotently (per-session
+# byte-offset cursors), so double-launches, crashes and offline servers lose
+# nothing.
 
 $ErrorActionPreference = "Stop"
 
-# --- read stdin as raw bytes, decode UTF-8 (VS Code writes UTF-8; [Console]::In
-# --- would decode with the legacy ANSI codepage and corrupt non-ASCII prompts)
+# --- read stdin as raw bytes, decode UTF-8 ([Console]::In would decode with
+# --- the legacy ANSI codepage and corrupt non-ASCII prompts)
 $stdin = [Console]::OpenStandardInput()
 $ms = New-Object System.IO.MemoryStream
 $buf = New-Object byte[] 65536
@@ -21,7 +24,6 @@ if ($ev.hook_event_name -ne "Stop") { exit 0 }
 $sessionId = $ev.session_id
 if (-not $sessionId) { exit 0 }
 
-# transcript_path may be the events.jsonl file or the session directory; keep as-is.
 $transcript = $ev.transcript_path
 $cwd = $ev.cwd
 $ts = $ev.timestamp
@@ -31,21 +33,23 @@ if (-not (Test-Path $baseDir)) { New-Item -ItemType Directory -Path $baseDir -Fo
 
 $queueFile = Join-Path $baseDir "queue.jsonl"
 $entry = @{
-    session_id     = $sessionId
+    session_id      = $sessionId
     transcript_path = $transcript
-    cwd            = $cwd
-    timestamp      = $ts
+    cwd             = $cwd
+    timestamp       = $ts
 } | ConvertTo-Json -Compress
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::AppendAllText($queueFile, $entry + "`n", $utf8)
 
-# Keep a full event mirror for debugging (bounded by manual cleanup).
+# Debug mirror of raw hook events (bounded by manual cleanup).
 $mirror = Join-Path $baseDir "events-mirror.jsonl"
 [System.IO.File]::AppendAllText($mirror, $in + "`n", $utf8)
 
-# --- launch uploader detached (hidden, own process). Double-launches are
-# --- harmless: per-session cursors make uploads idempotent.
-$uploader = "C:\Users\chenjie\copilot-ov-capture\src\uploader.mjs"
+# --- launch uploader detached. Double-launches are harmless: per-session
+# --- cursors make uploads idempotent.
+$pluginRoot = $env:PLUGIN_ROOT
+if (-not $pluginRoot) { $pluginRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) }
+$uploader = Join-Path $pluginRoot "scripts\uploader.mjs"
 if (Test-Path $uploader) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
     Start-Process -FilePath "node" -ArgumentList "`"$uploader`"" `

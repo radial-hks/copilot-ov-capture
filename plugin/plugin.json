@@ -1,0 +1,20 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "openviking-copilot",
+  "version": "0.2.0",
+  "description": "OpenViking long-term memory for GitHub Copilot: MCP recall/persist tools, memory skill, and automatic session capture via Stop hook.",
+  "author": {
+    "name": "chenjie",
+    "url": "https://github.com/radial-hks"
+  },
+  "repository": "https://github.com/radial-hks/copilot-ov-capture",
+  "license": "AGPL-3.0",
+  "keywords": [
+    "memory",
+    "long-term-memory",
+    "openviking",
+    "mcp",
+    "copilot",
+    "session-capture"
+  ]
+}
