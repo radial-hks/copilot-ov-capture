@@ -1,0 +1,55 @@
+name: plugin-gate
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Syntax check all scripts
+        run: |
+          for f in plugin/scripts/*.mjs; do node --check "$f"; done
+          echo "all .mjs syntax OK"
+
+      - name: Plugin conformance tests
+        working-directory: plugin
+        run: node --test plugin.test.mjs
+
+      - name: JSON validity
+        run: |
+          for f in plugin/plugin.json plugin/mcp.json \
+                   plugin/com.github.copilot/hooks/hooks.json \
+                   .github/plugin/marketplace.json; do
+            node -e "JSON.parse(require('fs').readFileSync('$f','utf8'))" || { echo "INVALID: $f"; exit 1; }
+          done
+          echo "all JSON valid"
+
+      - name: Version consistency (plugin.json vs marketplace.json)
+        run: |
+          PV=$(node -p "require('./plugin/plugin.json').version")
+          MV=$(node -p "require('./.github/plugin/marketplace.json').plugins[0].version")
+          if [ "$PV" != "$MV" ]; then
+            echo "::error::version mismatch: plugin.json=$PV marketplace.json=$MV — bump both together"
+            exit 1
+          fi
+          echo "versions consistent: $PV"
+
+      - name: Secret scan (OpenViking keys / server tokens)
+        run: |
+          # api keys are base64-ish long tokens; catch the known key material and generic assignments
+          if grep -rInE "(api_key|X-API-Key|Authorization).{0,40}[A-Za-z0-9+_-]{40,}" \
+              --include="*.md" --include="*.mjs" --include="*.ps1" --include="*.json" \
+              --exclude-dir=.git . | grep -v "<your" | grep -v "<admin"; then
+            echo "::error::possible secret committed — review matches above"
+            exit 1
+          fi
+          echo "no secrets detected"

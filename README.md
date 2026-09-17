@@ -10,11 +10,13 @@ OpenViking 记忆平台 × GitHub Copilot（VS Code + Copilot CLI）集成插件
 
 ## 快速开始（组员）
 
-```powershell
-git clone https://github.com/radial-hks/copilot-ov-capture.git
-cd copilot-ov-capture
-powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -ApiKey <你的user-key>
+```jsonc
+// VS Code 用户级 settings.json 加一行（私有仓库市场原生支持）
+"chat.plugins.marketplaces": ["radial-hks/copilot-ov-capture"]
+// 然后 Extensions 面板搜 @agentPlugins → Install openviking-copilot
 ```
+
+凭据（一次性）：手工创建 `%USERPROFILE%\.openviking\ovcli.conf`（`url` + `api_key`），或跑 install.ps1 代写。详见 [docs/installation.md](docs/installation.md)（三条路径）。
 
 装完自检：`node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\ov-doctor.mjs`
 
@@ -22,7 +24,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -ApiKey <你的u
 
 | 文档 | 内容 | 读者 |
 |---|---|---|
-| [docs/installation.md](docs/installation.md) | 两条安装路径（市场安装 / install.ps1）、验证清单、升级流程 | 首次安装的组员 |
+| [docs/installation.md](docs/installation.md) | 三条安装路径（VS Code 市场 / CLI 市场 / install.ps1）、验证清单、升级流程 | 首次安装的组员 |
 | [docs/usage.md](docs/usage.md) | 自动召回/自动捕获日常使用、workspace peer、隐私边界 | 全体使用者 |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 症状→处理速查表 | 全体使用者 |
 | [docs/architecture.md](docs/architecture.md) | 架构、官方插件对照、回归链、管理员操作（开 key / 发版） | 维护者 |
