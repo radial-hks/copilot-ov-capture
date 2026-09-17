@@ -1,0 +1,13 @@
+# 排障速查
+
+> 本文从 README 分拆。通用自诊断先跑 doctor（见 [usage.md](usage.md)），本文按症状查表。
+
+| 症状 | 处理 |
+|---|---|
+| Copilot 说没有 openviking MCP 工具 | 检查用户级 settings.json 的 `chat.plugins.enabled` 和 `chat.pluginLocations`；确认 Reload Window 过；`Developer: Show Agent Debug Logs` 搜 plugin |
+| health 报错/连接失败 | `curl http://10.67.8.199:1933/health`；确认内网/VPN 通；检查 `ovcli.conf` 的 key 是否完整（401 = key 错） |
+| uploader.log 报 UPLOAD FAILED | 服务器暂不可达，队列保留在 `queue.jsonl`，下次会话结束自动重试；也可手动 `node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\uploader.mjs` |
+| 会话没被捕获 | 看 `events-mirror.jsonl` 是否有 Stop 事件（无 = hook 没触发，查 hooks.json 是否在 Reload 后加载）；有 = 看 uploader.log |
+| 想重传/回填历史会话 | `node <插件目录>\scripts\uploader.mjs --backfill --dry-run` 先预览，去掉 `--dry-run` 执行（注意：commit 触发 LLM 提取，量大分批） |
+| 中文乱码 | 已修复（UTF-8 显式编解码）；旧版本捕获的乱码数据仅影响调试镜像，不影响上传 |
+| 改了插件源码没生效 | Copilot CLI 缓存陷阱：重新 `copilot plugin install openviking-copilot@openviking-team`；VS Code 侧重跑 install.ps1 或 Reload Window |
