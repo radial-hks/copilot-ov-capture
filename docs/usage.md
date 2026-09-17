@@ -34,6 +34,10 @@
 node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\ov-doctor.mjs
 ```
 
+```bash
+node ~/.openviking/copilot-ov-plugin/scripts/ov-doctor.mjs
+```
+
 10 项体检（Node / 凭据 / 连通 / 鉴权 / 技能接口 / peer / 队列 / 游标 / 上传日志 / VS Code 注册），FAIL 项自带修复提示。先把 doctor 结果发给管理员，而不是截图聊天窗口。
 
 ## 按项目精准召回（workspace peer）

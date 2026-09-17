@@ -476,6 +476,47 @@ test("hooks.json wires the full five-event hook face", () => {
   }
 });
 
+test("hooks.json uses cross-platform node commands only", () => {
+  const hooks = JSON.parse(readFileSync(join(PLUGIN_ROOT, "com.github.copilot", "hooks", "hooks.json"), "utf8")).hooks;
+  for (const [event, entries] of Object.entries(hooks)) {
+    for (const hook of entries) {
+      assert.ok(!hook.command.includes("\\"), `${event}: hook command must use forward slashes`);
+      assert.ok(!/powershell/i.test(hook.command), `${event}: hook command must not require PowerShell`);
+      assert.match(hook.command, /^node "\$\{PLUGIN_ROOT\}\//, `${event}: hook command must run a plugin-local Node script`);
+    }
+  }
+  assert.match(hooks.Stop[0].command, /\/scripts\/capture\.mjs"$/);
+  assert.match(hooks.PreCompact[0].command, /\/scripts\/capture\.mjs"$/);
+});
+
+test("capture.mjs queues Stop and PreCompact events without PowerShell", async () => {
+  const { queueCaptureEvent } = await import(join(PLUGIN_ROOT, "scripts", "capture.mjs"));
+  const baseDir = join(os.tmpdir(), `ov-capture-${process.pid}-${Date.now()}`);
+  const event = {
+    hook_event_name: "Stop",
+    session_id: "s-utf8",
+    transcript_path: join(os.tmpdir(), "events.jsonl"),
+    cwd: os.tmpdir(),
+    timestamp: "2026-09-18T00:00:00Z",
+  };
+  try {
+    const queued = queueCaptureEvent(event, { baseDir, rawInput: JSON.stringify(event) });
+    assert.equal(queued, true);
+    const queue = readFileSync(join(baseDir, "queue.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
+    assert.deepEqual(queue, [{
+      session_id: "s-utf8",
+      transcript_path: event.transcript_path,
+      cwd: event.cwd,
+      timestamp: event.timestamp,
+    }]);
+    assert.match(readFileSync(join(baseDir, "events-mirror.jsonl"), "utf8"), /"hook_event_name":"Stop"/);
+    assert.equal(queueCaptureEvent({ hook_event_name: "UserPromptSubmit", session_id: "s-utf8" }, { baseDir }), false);
+    assert.equal(queueCaptureEvent({ hook_event_name: "PreCompact" }, { baseDir }), false);
+  } finally {
+    rmSync(baseDir, { recursive: true, force: true });
+  }
+});
+
 test("auto-recall forwards session_id and injects recall hits (mock server)", async () => {
   const { runRecall } = await import(join(PLUGIN_ROOT, "scripts", "auto-recall.mjs"));
   const requests = [];

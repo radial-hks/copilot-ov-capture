@@ -58,7 +58,7 @@ cd <仓库目录>
 powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -ApiKey <你的user-key> -ServerUrl <你的-openviking-server-url>
 ```
 
-安装器做三件事（幂等，可重复运行）：
+Windows 安装器做三件事（幂等，可重复运行）：
 - 拷贝插件到 `%USERPROFILE%\.openviking\copilot-ov-plugin`
 - 写凭据 `%USERPROFILE%\.openviking\ovcli.conf`（`url` + `api_key`；MCP 代理与捕获上传器共用，**不进任何 git 仓库**）
 - 合并 VS Code **用户级** settings.json：`chat.plugins.enabled: true` + `chat.pluginLocations` 指向插件目录（自动探测真实 user-data 目录，含自定义 `--user-data-dir` 场景）
@@ -68,8 +68,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -ApiKey <你的u
 ## 安装后验证（两条命令）
 
 ```powershell
-# 一键自诊断：Node/凭据/连通/鉴权/peer/捕获管线/VS Code 注册 9 项检查
+# Windows：一键自诊断（Node/凭据/连通/鉴权/peer/捕获管线/VS Code 注册等）
 node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\ov-doctor.mjs
+```
+
+```bash
+# Linux/macOS：市场安装后按实际插件目录运行 doctor
+node ~/.openviking/copilot-ov-plugin/scripts/ov-doctor.mjs
 ```
 
 应全绿。然后：
@@ -81,6 +86,9 @@ node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\ov-doctor.mjs
 4. 自动捕获验证：随便问一个实质问题，会话结束后：
    ```powershell
    Get-Content %USERPROFILE%\.openviking\copilot-capture\uploader.log -Tail 5
+   ```
+   ```bash
+   tail -n 5 ~/.openviking/copilot-capture/uploader.log
    ```
    - ✅ 预期：出现 `session <id>: +N messages, committed`
 5. Studio：浏览器打开 `<your-openviking-server-url>/studio`，用**自己的 user key** 登录，Sessions 页应能看到 `import__copilot__<会话id>`
