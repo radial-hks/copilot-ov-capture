@@ -5,6 +5,7 @@
   "description": "OpenViking long-term memory for GitHub Copilot: MCP recall/persist tools, automatic session capture, and automatic recall injection (auto-recall + auto-capture + doctor).",
   "author": {
     "name": "chenjie",
+    "email": "radial.hks@gmail.com",
     "url": "https://github.com/radial-hks"
   },
   "repository": "https://github.com/radial-hks/copilot-ov-capture",
