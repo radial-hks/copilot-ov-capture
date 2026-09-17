@@ -6,6 +6,8 @@ OpenViking 记忆平台 × GitHub Copilot（VS Code + Copilot CLI）集成插件
 2. **自动召回注入**（v0.3.0+）：每条 prompt 前自动检索团队记忆并注入上下文——Copilot 无需调工具就"记得"团队经验
 3. **自动捕获**（`com.github.copilot/` 扩展）：Stop hook 自动把会话内容（用户输入 + 模型回复）回放到 OpenViking，commit 触发记忆提取
 
+> **让 Copilot 帮你装**：把本仓库地址发给你的 Copilot 助手，加一句"读 llms.txt 帮我安装"——它会按仓库根的 [llms.txt](llms.txt) 流程引导完成（只在 user key 环节需要你提供管理员私发的凭据）。
+
 > 前置：团队 OpenViking 服务（内网），由管理员（chenjie）为每人签发 user key。
 
 ## 快速开始（组员）
