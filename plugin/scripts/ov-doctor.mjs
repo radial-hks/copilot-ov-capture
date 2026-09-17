@@ -6,8 +6,9 @@
  *
  * Usage:  node ov-doctor.mjs
  * Checks, in order: Node version, credentials (ovcli.conf), server reachability
- * + auth, workspace peer derivation, capture pipeline state (queue/cursors),
- * recent uploader results, VS Code settings registration.
+ * + auth, skills REST endpoint (local skill tools depend on it), workspace
+ * peer derivation, capture pipeline state (queue/cursors), recent uploader
+ * results, VS Code settings registration.
  * Exits 0 always; prints a PASS/FAIL table with fix hints (Chinese, team-facing).
  */
 
@@ -63,6 +64,14 @@ if (cfg.url && cfg.apiKey) {
         check("API Key 鉴权", s.status !== 401 && s.status !== 403, `HTTP ${s.status}`,
           s.status === 401 ? "key 错误或已失效——找管理员重发 user key" : "");
       } catch { check("API Key 鉴权", false, "请求失败", ""); }
+      try {
+        const sk = await fetch(cfg.url + "/api/v1/skills?node_limit=1", {
+          headers: { "Authorization": `Bearer ${cfg.apiKey}` },
+          signal: AbortSignal.timeout(8000),
+        });
+        check("技能 REST 接口", sk.ok, `HTTP ${sk.status}`,
+          sk.status === 404 ? "服务器版本过旧，无 /api/v1/skills（add_skill/update_skill 工具不可用）——找管理员升级服务端" : "");
+      } catch { check("技能 REST 接口", false, "请求失败", "确认服务器可达"); }
     }
   } catch (e) {
     check("服务连通", false, e.message, `确认 ${cfg.url} 可达（内网/VPN）`);

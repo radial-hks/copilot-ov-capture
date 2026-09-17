@@ -68,7 +68,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File <目录>\install.ps1 -ApiKey
 node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\ov-doctor.mjs
 ```
 
-逐项解读输出（9 项体检，PASS/FAIL 带修复提示）：
+逐项解读输出（10 项体检，PASS/FAIL 带修复提示）：
 - 有 FAIL → 按 FAIL 项的"修复"提示处理；处理后重跑 doctor
 - `VS Code 插件注册` 项走路径 1 时可能显示未注册（doctor 检查的是 chat.pluginLocations 方式）——若用户走了市场安装且插件已在 @agentPlugins 里显示为 Installed，此 FAIL 可忽略，其他项全绿即成功
 - 全绿 → 安装完成。告诉用户：新开 Copilot 会话随便问个问题（如"帮我回顾之前做过的类似功能"），之后可以用了

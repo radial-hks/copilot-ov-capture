@@ -10,7 +10,9 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import http from "node:http";
+import os from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -210,5 +212,347 @@ test("vendored proxy chain resolves: mcp-proxy.mjs imports exist", () => {
       existsSync(join(PLUGIN_ROOT, "servers", rel)),
       `mcp-proxy.mjs import missing: ${rel}`,
     );
+  }
+});
+
+test("local-tools entry chain resolves: mcp-entry.mjs and skill-tools.mjs imports exist", () => {
+  const entry = readFileSync(join(PLUGIN_ROOT, "local-tools", "mcp-entry.mjs"), "utf-8");
+  const tools = readFileSync(join(PLUGIN_ROOT, "local-tools", "skill-tools.mjs"), "utf-8");
+  for (const [file, rel] of [["mcp-entry.mjs", entry], ["skill-tools.mjs", tools]]) {
+    const imports = [...rel.matchAll(/from\s+"(\.[^"]+)"/g)].map((m) => m[1]);
+    assert.ok(imports.length > 0, `${file} expected relative imports`);
+    for (const imp of imports) {
+      assert.ok(
+        existsSync(resolve(join(PLUGIN_ROOT, "local-tools"), imp)),
+        `${file} import missing: ${imp}`,
+      );
+    }
+  }
+  // The entry must stay in sync with servers/mcp-proxy.mjs's credential wiring.
+  for (const module of ["credentials.mjs", "mcp-proxy-config.mjs", "mcp-proxy-core.mjs"]) {
+    assert.ok(entry.includes(module), `mcp-entry.mjs must import shared/${module}`);
+  }
+});
+
+test("mcp.json points at the local-tools entry so skill tools are exposed", () => {
+  const mcp = loadJson("mcp.json");
+  const server = mcp.mcpServers.openviking;
+  const arg = (server.args || []).find((a) => String(a).includes("${PLUGIN_ROOT}"));
+  assert.ok(arg, "openviking server must declare a ${PLUGIN_ROOT} arg");
+  const expanded = resolve(arg.replaceAll("${PLUGIN_ROOT}", PLUGIN_ROOT));
+  assert.ok(existsSync(expanded), `mcp.json references missing entry: ${arg}`);
+  assert.equal(expanded, join(PLUGIN_ROOT, "local-tools", "mcp-entry.mjs"));
+});
+
+test("skill tool provider lists add/update/validate/task_status with flat schemas", async () => {
+  const { createSkillToolProvider } = await import(join(PLUGIN_ROOT, "local-tools", "skill-tools.mjs"));
+  const provider = createSkillToolProvider({ fetchImpl: async () => { throw new Error("must not fetch"); } });
+  const tools = provider.listTools();
+  assert.deepEqual(tools.map((t) => t.name), ["add_skill", "update_skill", "validate_skill", "task_status"]);
+  for (const tool of tools) {
+    assert.equal(tool.inputSchema.type, "object", `${tool.name}: schema must be a flat object`);
+    assert.equal(typeof tool.inputSchema.properties, "object", `${tool.name}: properties expected`);
+    for (const value of Object.values(tool.inputSchema.properties)) {
+      assert.equal(typeof value.type, "string", `${tool.name}: property schemas must be flat (single type string)`);
+    }
+    // required (when present) must only name declared properties
+    for (const req of tool.inputSchema.required || []) {
+      assert.ok(tool.inputSchema.properties[req], `${tool.name}: required field ${req} not declared`);
+    }
+  }
+  // Unknown tools are not handled locally (proxy forwards them upstream).
+  assert.equal(await provider.callTool({ name: "find", arguments: {} }, { config: {} }), null);
+});
+
+test("skill tool provider: add_skill posts to the REST endpoint with auth headers", async () => {
+  const calls = [];
+  const { createSkillToolProvider } = await import(join(PLUGIN_ROOT, "local-tools", "skill-tools.mjs"));
+  const provider = createSkillToolProvider({
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return new Response(JSON.stringify({
+        status: "ok",
+        result: { status: "success", uri: "viking://user/alice/skills/my-skill", task_id: "t-1" },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+  const config = {
+    restBaseUrl: "http://ov.test",
+    apiKey: "key-1",
+    account: "acct",
+    user: "alice",
+    sendIdentityHeaders: true,
+    peerId: "github.com-org-repo",
+    userAgent: "openviking-memory-agent-plugins/0.4.0",
+    timeoutMs: 5000,
+  };
+  const result = await provider.callTool(
+    { name: "add_skill", arguments: { data: "---\nname: my-skill\ndescription: test\n---\n\n# my-skill\n" } },
+    { config },
+  );
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "http://ov.test/api/v1/skills");
+  assert.equal(calls[0].init.method, "POST");
+  assert.equal(calls[0].init.headers.Authorization, "Bearer key-1");
+  assert.equal(calls[0].init.headers["X-OpenViking-Account"], "acct");
+  assert.equal(calls[0].init.headers["X-OpenViking-Actor-Peer"], "github.com-org-repo");
+  assert.deepEqual(JSON.parse(calls[0].init.body), { data: "---\nname: my-skill\ndescription: test\n---\n\n# my-skill\n" });
+  assert.equal(result.isError, undefined);
+  assert.ok(JSON.stringify(result).includes("viking://user/alice/skills/my-skill"));
+});
+
+test("skill tool provider: update_skill PUTs to /skills/{name} and surfaces errors as isError", async () => {
+  const calls = [];
+  const { createSkillToolProvider } = await import(join(PLUGIN_ROOT, "local-tools", "skill-tools.mjs"));
+  const provider = createSkillToolProvider({
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return new Response(JSON.stringify({
+        status: "error",
+        error: { code: "INVALID_ARGUMENT", message: "Skill parse error: invalid skill metadata" },
+      }), { status: 400, headers: { "content-type": "application/json" } });
+    },
+  });
+  const result = await provider.callTool(
+    { name: "update_skill", arguments: { skill_name: "my skill/2", data: "x" } },
+    { config: { restBaseUrl: "http://ov.test", apiKey: "k", timeoutMs: 5000 } },
+  );
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "http://ov.test/api/v1/skills/my%20skill%2F2");
+  assert.equal(calls[0].init.method, "PUT");
+  assert.deepEqual(JSON.parse(calls[0].init.body), { data: "x" });
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /HTTP 400/);
+  assert.match(result.content[0].text, /invalid skill metadata/);
+});
+
+test("skill tool provider: missing required args and from_source guard return isError", async () => {
+  const { createSkillToolProvider } = await import(join(PLUGIN_ROOT, "local-tools", "skill-tools.mjs"));
+  const provider = createSkillToolProvider({
+    fetchImpl: async () => { throw new Error("must not fetch"); },
+  });
+  const config = { restBaseUrl: "http://ov.test", apiKey: "k", timeoutMs: 5000 };
+
+  const noData = await provider.callTool({ name: "add_skill", arguments: {} }, { config });
+  assert.equal(noData.isError, true);
+  assert.match(noData.content[0].text, /add_skill requires/);
+
+  const noName = await provider.callTool({ name: "update_skill", arguments: { data: "x" } }, { config });
+  assert.equal(noName.isError, true);
+  assert.match(noName.content[0].text, /skill_name/);
+
+  const noPayload = await provider.callTool({ name: "update_skill", arguments: { skill_name: "s" } }, { config });
+  assert.equal(noPayload.isError, true);
+  assert.match(noPayload.content[0].text, /data.*from_source|from_source.*data/);
+
+  const noBase = await provider.callTool(
+    { name: "add_skill", arguments: { data: "x" } },
+    { config: { restBaseUrl: "", timeoutMs: 5000 } },
+  );
+  assert.equal(noBase.isError, true);
+  assert.match(noBase.content[0].text, /REST base URL/);
+});
+
+test("skill tool provider: task_status GETs the Task API endpoint", async () => {
+  const calls = [];
+  const { createSkillToolProvider } = await import(join(PLUGIN_ROOT, "local-tools", "skill-tools.mjs"));
+  const provider = createSkillToolProvider({
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return new Response(JSON.stringify({
+        status: "ok",
+        result: { task_id: "t-1", task_type: "session_commit", status: "completed" },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+  const okRun = await provider.callTool(
+    { name: "task_status", arguments: { task_id: "t/1 2", include_events: true } },
+    { config: { restBaseUrl: "http://ov.test", apiKey: "k", timeoutMs: 5000 } },
+  );
+  assert.equal(calls[0].url, "http://ov.test/api/v1/tasks/t%2F1%202?include_events=true");
+  assert.equal(calls[0].init.method, "GET");
+  assert.equal(okRun.isError, undefined);
+  assert.ok(JSON.stringify(okRun).includes("completed"));
+
+  const noId = await provider.callTool({ name: "task_status", arguments: {} }, { config: { restBaseUrl: "http://ov.test", timeoutMs: 5000 } });
+  assert.equal(noId.isError, true);
+  assert.match(noId.content[0].text, /task_id/);
+});
+
+test("skill tool provider: add_skill `path` uploads the local file via temp_upload", async () => {
+  const tmpSkill = join(PLUGIN_ROOT, "..", "..", ".tmp-skill-test-SKILL.md");
+  writeFileSync(tmpSkill, "---\nname: path-skill\ndescription: uploaded via path\n---\n\n# path-skill\n");
+  try {
+    const calls = [];
+    const { createSkillToolProvider } = await import(join(PLUGIN_ROOT, "local-tools", "skill-tools.mjs"));
+    const provider = createSkillToolProvider({
+      fetchImpl: async (url, init) => {
+        calls.push({ url, init });
+        if (url.endsWith("/api/v1/resources/temp_upload")) {
+          assert.ok(init.body instanceof FormData, "temp_upload must receive multipart FormData");
+          assert.equal(init.headers["Content-Type"], undefined, "fetch must own the multipart boundary");
+          assert.equal(init.headers.Authorization, "Bearer k");
+          return new Response(JSON.stringify({
+            status: "ok",
+            result: { temp_file_id: "tmp-9" },
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        return new Response(JSON.stringify({
+          status: "ok",
+          result: { status: "success", uri: "viking://user/alice/skills/path-skill", task_id: "t-2" },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      },
+    });
+    const result = await provider.callTool(
+      { name: "add_skill", arguments: { path: tmpSkill } },
+      { config: { restBaseUrl: "http://ov.test", apiKey: "k", timeoutMs: 5000 } },
+    );
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].url, "http://ov.test/api/v1/skills");
+    assert.deepEqual(JSON.parse(calls[1].init.body), { temp_file_id: "tmp-9" });
+    assert.equal(result.isError, undefined);
+
+    const both = await provider.callTool(
+      { name: "add_skill", arguments: { path: tmpSkill, data: "x" } },
+      { config: { restBaseUrl: "http://ov.test", apiKey: "k", timeoutMs: 5000 } },
+    );
+    assert.equal(both.isError, true);
+    assert.match(both.content[0].text, /exactly one/);
+
+    const missing = await provider.callTool(
+      { name: "add_skill", arguments: { path: "/nonexistent/SKILL.md" } },
+      { config: { restBaseUrl: "http://ov.test", apiKey: "k", timeoutMs: 5000 } },
+    );
+    assert.equal(missing.isError, true);
+    assert.match(missing.content[0].text, /not found/);
+  } finally {
+    rmSync(tmpSkill, { force: true });
+  }
+});
+
+test("uri-guard: denies file tools with viking:// paths, hints on terminal, passes MCP tools", async () => {
+  const { decideUriGuard } = await import(join(PLUGIN_ROOT, "scripts", "uri-guard.mjs"));
+
+  // File tool with a viking:// path -> deny with MCP redirection.
+  const denied = decideUriGuard({ tool_name: "read_file", tool_input: { filePath: "viking://user/alice/memories/pr.md" } });
+  assert.equal(denied.hookSpecificOutput.permissionDecision, "deny");
+  assert.match(denied.hookSpecificOutput.permissionDecisionReason, /openviking MCP tools/);
+
+  // snake_case path keys and other path-like keys are covered too.
+  assert.equal(
+    decideUriGuard({ tool_name: "create_file", tool_input: { file_path: "viking://user/alice/skills/x/SKILL.md" } })?.hookSpecificOutput?.permissionDecision,
+    "deny",
+  );
+
+  // openviking MCP tools take viking:// URIs by design -> untouched.
+  assert.equal(decideUriGuard({ tool_name: "openviking_read", tool_input: { uri: "viking://user/alice/memories/x.md" } }), null);
+
+  // Search pattern text is never a path -> untouched.
+  assert.equal(decideUriGuard({ tool_name: "grep_search", tool_input: { pattern: "viking://usage in docs" } }), null);
+
+  // Terminal command embedding a viking:// string -> allowed with a hint.
+  const hinted = decideUriGuard({ tool_name: "runTerminalCommand", tool_input: { command: "curl http://ov/api/v1/content/read?uri=viking://user/a/x.md" } });
+  assert.equal(hinted.hookSpecificOutput, undefined);
+  assert.match(hinted.systemMessage, /not local files/);
+
+  // No viking:// anywhere -> untouched.
+  assert.equal(decideUriGuard({ tool_name: "read_file", tool_input: { filePath: "/home/user/repo/src/main.ts" } }), null);
+  assert.equal(decideUriGuard({}), null);
+});
+
+test("hooks.json wires the full five-event hook face", () => {
+  const hooks = JSON.parse(readFileSync(join(PLUGIN_ROOT, "com.github.copilot", "hooks", "hooks.json"), "utf8")).hooks;
+  const events = Object.keys(hooks);
+  assert.deepEqual(events.sort(), ["PreCompact", "PreToolUse", "SessionStart", "Stop", "UserPromptSubmit"]);
+  for (const [event, entries] of Object.entries(hooks)) {
+    assert.ok(entries.length > 0, `${event} must declare a hook`);
+    for (const hook of entries) {
+      assert.equal(hook.type, "command", `${event}: type must be command`);
+      const m = /\$\{PLUGIN_ROOT\}([^"]+)/.exec(hook.command);
+      assert.ok(m, `${event}: command must reference \${PLUGIN_ROOT\}`);
+      const script = m[1].replaceAll("\\", "/");
+      assert.ok(existsSync(join(PLUGIN_ROOT, script)), `${event}: referenced script missing: ${script}`);
+    }
+  }
+});
+
+test("auto-recall forwards session_id and injects recall hits (mock server)", async () => {
+  const { runRecall } = await import(join(PLUGIN_ROOT, "scripts", "auto-recall.mjs"));
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => body += c);
+    req.on("end", () => {
+      requests.push({ url: req.url, body });
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        status: "ok",
+        result: { entries: [{ uri: "viking://user/alice/memories/deploy.md", score: 0.9, text: "deploy via gh actions" }] },
+      }));
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+  const prevUrl = process.env.OPENVIKING_URL;
+  const prevKey = process.env.OPENVIKING_API_KEY;
+  process.env.OPENVIKING_URL = `http://127.0.0.1:${port}`;
+  process.env.OPENVIKING_API_KEY = "k";
+  try {
+    const out = await runRecall({ prompt: "how did we configure the deploy pipeline", cwd: os.tmpdir(), session_id: "s-123" });
+    const sent = JSON.parse(requests.find((r) => r.url.includes("/api/v1/search/search")).body);
+    assert.equal(sent.session_id, "import__copilot__s-123");
+    assert.equal(sent.mode, "context");
+    assert.match(out.hookSpecificOutput.additionalContext, /deploy via gh actions/);
+    assert.match(out.hookSpecificOutput.additionalContext, /source="auto-recall"/);
+    // Trivial prompts never hit the server.
+    assert.deepEqual(await runRecall({ prompt: "hi", cwd: os.tmpdir() }), {});
+  } finally {
+    if (prevUrl === undefined) delete process.env.OPENVIKING_URL; else process.env.OPENVIKING_URL = prevUrl;
+    if (prevKey === undefined) delete process.env.OPENVIKING_API_KEY; else process.env.OPENVIKING_API_KEY = prevKey;
+    server.close();
+  }
+});
+
+test("session-start injects profile and memory listings (mock server)", async () => {
+  const { runSessionStart } = await import(join(PLUGIN_ROOT, "scripts", "session-start.mjs"));
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url, "http://127.0.0.1");
+    res.setHeader("content-type", "application/json");
+    if (url.pathname === "/api/v1/system/status") {
+      return res.end(JSON.stringify({ status: "ok", result: { user: "alice" } }));
+    }
+    if (url.pathname === "/api/v1/content/read") {
+      return res.end(JSON.stringify({ status: "ok", result: "# profile\n- Alice, backend engineer, prefers terse answers" }));
+    }
+    if (url.pathname === "/api/v1/fs/ls") {
+      const uri = url.searchParams.get("uri") || "";
+      if (uri === "viking://user") {
+        return res.end(JSON.stringify({ status: "ok", result: [{ isDir: true, name: "alice" }] }));
+      }
+      return res.end(JSON.stringify({
+        status: "ok",
+        result: [{ isDir: false, rel_path: "alice/pr_workflow.md", abstract: "team PR review workflow" }],
+      }));
+    }
+    res.statusCode = 404;
+    res.end("{}");
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+  const prevUrl = process.env.OPENVIKING_URL;
+  const prevKey = process.env.OPENVIKING_API_KEY;
+  process.env.OPENVIKING_URL = `http://127.0.0.1:${port}`;
+  process.env.OPENVIKING_API_KEY = "k";
+  try {
+    const out = await runSessionStart({ cwd: os.tmpdir(), session_id: "s-1" });
+    const ctx = out.hookSpecificOutput.additionalContext;
+    assert.match(ctx, /source="session-start"/);
+    assert.match(ctx, /Alice, backend engineer/);
+    assert.match(ctx, /pr_workflow\.md/);
+    assert.match(ctx, /team PR review workflow/);
+  } finally {
+    if (prevUrl === undefined) delete process.env.OPENVIKING_URL; else process.env.OPENVIKING_URL = prevUrl;
+    if (prevKey === undefined) delete process.env.OPENVIKING_API_KEY; else process.env.OPENVIKING_API_KEY = prevKey;
+    server.close();
   }
 });

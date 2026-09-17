@@ -7,14 +7,25 @@
 **每条 prompt 发出前自动执行**：插件从团队记忆库检索相关经验（按当前仓库的 peer 定向），把最相关的条目注入为 `<openviking-context>` 上下文块——Copilot 无需调用任何工具就能"记得"团队之前踩过的坑、做过的方案。
 
 - 检索限定工作区 peer + 阈值过滤，只注入强相关内容（弱相关命中自动丢弃）
+- 检索携带会话 ID（与捕获管线同一 OV 会话）：同一会话内已注入过的记忆不重复注入（服务端跨轮去重），且服务端按会话上下文扩写检索词
 - 服务器不可达时静默跳过，**绝不阻塞你的提问**
 - 问历史相关问题时，Copilot 的回答会自然带上团队经验（不用再手动"搜一下 openviking"）
+
+## 开场注入（SessionStart）
+
+每个新会话的第一条 prompt 时注入一次：你的个人档案（profile.md，含职位/偏好/在用工具）+ 可用的偏好/实体记忆清单。Copilot 从第一句话起就"认识你"，不用每次自我介绍。约 6000 token 预算，CJK 内容按实际密度计算；未配置凭据或服务器不可达时静默跳过。
+
+## 上下文保护（自动，无需操作）
+
+- **压缩前归档（PreCompact）**：长会话触发 VS Code 上下文压缩前，先把未归档的对话增量上传并 commit——压缩只影响本地上下文窗口，OpenViking 侧不丢任何未提取内容
+- **viking:// URI 防护（PreToolUse）**：Copilot 误把 `viking://` 资源当本地文件去读/写时，调用被拒绝并提示改用 openviking MCP 工具（read/list/find）——不再出现"文件不存在"的困惑报错
 
 ## 其他日常
 
 - **会话自动捕获**：会话结束后 Stop hook 自动触发，记忆提取由服务端异步完成（1-2 分钟）
 - **手动检索**：Copilot 里说"用 openviking 搜一下 XXX"（openviking MCP 工具）
 - **显式沉淀**：会话中随时说"把这个经验 remember 到 openviking"——适合你想确保入库的结论
+- **写入/更新技能**：说"把这个流程存成一个 skill"——Copilot 调 `add_skill` 把 SKILL.md 写入你的个人技能目录（`viking://~/skills`；也支持 `path` 直接上传本地 SKILL.md 文件）；`update_skill` 整包替换、`validate_skill` 先校验。add/commit 是异步的，返回的 task_id 可用 `task_status` 查询进度。注意：通用 `write` 工具写不了 skills（服务端设计边界，见排障表）
 - **Studio**：`<your-openviking-server-url>/studio`，user key 登录，可看/搜自己的全部记忆与会话
 
 ## 出问题怎么办（自诊断）
@@ -23,7 +34,7 @@
 node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\ov-doctor.mjs
 ```
 
-9 项体检（Node / 凭据 / 连通 / 鉴权 / peer / 队列 / 游标 / 上传日志 / VS Code 注册），FAIL 项自带修复提示。先把 doctor 结果发给管理员，而不是截图聊天窗口。
+10 项体检（Node / 凭据 / 连通 / 鉴权 / 技能接口 / peer / 队列 / 游标 / 上传日志 / VS Code 注册），FAIL 项自带修复提示。先把 doctor 结果发给管理员，而不是截图聊天窗口。
 
 ## 按项目精准召回（workspace peer）
 

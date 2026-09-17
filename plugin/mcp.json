@@ -4,7 +4,7 @@
     "openviking": {
       "type": "stdio",
       "command": "node",
-      "args": ["${PLUGIN_ROOT}/servers/mcp-proxy.mjs"]
+      "args": ["${PLUGIN_ROOT}/local-tools/mcp-entry.mjs"]
     }
   }
 }

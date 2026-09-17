@@ -2,21 +2,27 @@
 
 > 本文从 README 分拆，面向维护者（仓库 owner / 后续接手人）。组员文档见 [installation.md](installation.md) / [usage.md](usage.md) / [troubleshooting.md](troubleshooting.md)。
 
-## 目录结构
-
 ```
 plugin/                          # Agent Plugins 1.0 包（分发单元）
 ├── plugin.json                  # 清单（name: openviking-copilot）
-├── mcp.json                     # stdio MCP 代理声明（官方上游）
+├── mcp.json                     # stdio MCP 代理声明（入口在 local-tools/）
 ├── servers/                     # 官方 mcp-proxy.mjs + shared（勿改，上游同步）
+├── local-tools/                 # 本地扩展（上游同步安全区，servers/ 覆盖不影响）
+│   ├── mcp-entry.mjs            # MCP 入口：共享代理核心 + localToolProvider
+│   └── skill-tools.mjs          # add/update/validate_skill + task_status（REST）
 ├── skills/                      # 官方 openviking-memory / ov-memory-troubleshoot（勿改）
 ├── scripts/
-│   ├── auto-recall.mjs          # UserPromptSubmit：检索+注入 <openviking-context>
-│   ├── capture.ps1              # Stop hook：UTF-8 读事件→入队→分离启动 uploader
+│   ├── auto-recall.mjs          # UserPromptSubmit：检索+注入 <openviking-context>（带 session_id）
+│   ├── session-start.mjs        # SessionStart：profile + 可用记忆清单注入
+│   ├── uri-guard.mjs            # PreToolUse：拒绝文件工具误用 viking:// URI
+│   ├── capture.ps1              # Stop/PreCompact hook：入队→分离启动 uploader
 │   ├── uploader.mjs             # 游标增量解析 transcript→提取文本→OV 会话 API
-│   └── ov-doctor.mjs            # 9 项自诊断（对齐官方 ov-memory-doctor）
+│   ├── ov-doctor.mjs            # 10 项自诊断（含技能 REST 接口检查）
+│   └── lib/
+│       ├── ov-common.mjs        # hook 共享：配置链 + workspace peer + fetchJSON
+│       └── profile-inject.mjs   # 官方共享层 vendored（上游整文件覆盖同步）
 └── com.github.copilot/
-    └── hooks/hooks.json         # ${PLUGIN_ROOT} 引用（无硬编码路径）
+    └── hooks/hooks.json         # 五事件（SessionStart/UserPromptSubmit/PreToolUse/PreCompact/Stop）
 
 install.ps1                      # 组员安装器（拷贝+凭据+VS Code settings 合并）
 .github/plugin/marketplace.json  # 插件市场清单（本仓库即市场）
@@ -29,6 +35,12 @@ docs/                            # 文档（安装/使用/排障/本文）
 - **幂等**：字节偏移游标（`state\<session_id>.json`）+ OV 会话 ID `import__copilot__<id>`；重跑/崩溃/双启动不重不漏
 - **提取策略**对齐官方 ingest：user/assistant 文本保留，tool I/O 丢弃，peer_id 取 `copilot/<model>` 与工作区 peer
 - **workspace peer 推导**（官方 ovcli 工作区配置同语义）：`.openviking/config.json` 的 `peer.id` > 归一化 git origin > 仓库根；非 git 目录不发 peer
+- **本地 MCP 工具**：服务端 MCP 面刻意不暴露的写路径/任务面由 `localToolProvider` 扩展点补齐——`add_skill` / `update_skill` / `validate_skill`（REST `/api/v1/skills*`，`path` 参数走 temp_upload 上传本地 SKILL.md）与 `task_status`（`GET /api/v1/tasks/{id}`）。`tools/list` 时拼在服务端 15 个工具后，`tools/call` 时本地拦截；凭据/身份头与代理共用同一解析链。代码放 `local-tools/` 而非 `servers/`——后者上游同步时整目录覆盖，本地修改会静默丢失
+- **召回带 session_id**（官方接入约定①）：auto-recall 转发 `import__copilot__<id>`（与捕获管线同一 OV 会话），激活服务端 query expansion 与跨轮去重台账
+- **profile 注入**（SessionStart）：vendored 官方 `profile-inject.mjs`（profile.md + preferences/entities 清单，6000 token CJK 感知预算）；离线/未配置静默跳过，绝不阻塞会话启动
+- **uri-guard**（PreToolUse）：文件工具收到 `viking://` 路径 → deny 并提示改用 openviking MCP 工具；terminal 命令含 `viking://` → 放行 + systemMessage 提示；openviking MCP 工具自身放行。VS Code 忽略 matcher，过滤在脚本内做
+- **PreCompact 归档**：压缩前触发捕获管线（上传增量 + commit keep 0），长会话压缩不丢未归档上下文；官方 CC 同语义（PreCompact 只 commit）
+- **上游同步注意**：`local-tools/mcp-entry.mjs` 的 `readProxyConfig` 与 `servers/mcp-proxy.mjs` 是同一凭据链的复制（外加 `restBaseUrl` 字段）；上游改 `buildProxyConnection`/`buildMcpProxyConfig` 签名时两处都要改，`plugin.test.mjs` 有断言防漂移。`scripts/lib/profile-inject.mjs` 整文件 vendored，同步 = 覆盖 + 保留两行头部注释
 - 官方上游同步：`servers/` 与 `skills/` 来自 volcengine/OpenViking `agent-plugins/`，升级时整目录覆盖
 
 ## 与官方 Claude Code 插件的对照
@@ -37,13 +49,20 @@ docs/                            # 文档（安装/使用/排障/本文）
 
 | 能力 | 官方 CC 插件 | 本插件 |
 |---|---|---|
-| 自动召回 | UserPromptSubmit → additionalContext | 同机制（VS Code hooks 同名字段） |
-| 自动捕获 | Stop + PreCompact + SessionEnd | Stop（Copilot 转录文件即会话终态，PreCompact 无对应事件） |
+| 自动召回 | UserPromptSubmit → additionalContext | 同机制 + 转发 session_id（激活服务端扩写/去重） |
+| profile 注入 | SessionStart（10000 token） | SessionStart（6000 token，vendored 官方 profile-inject） |
+| 自动捕获 | Stop + PreCompact + SessionEnd | Stop + PreCompact（capture.ps1 双事件门） |
+| uri-guard | PreToolUse 拒绝/提示 | 同语义（PreToolUse deny + systemMessage；VS Code 忽略 matcher，脚本内过滤） |
 | 离线队列 | pending 目录 + 重试预算/TTL | queue.jsonl + 下次 Stop 重试（简化实现） |
-| 自诊断 | ov-memory-doctor skill + 脚本 | ov-doctor.mjs（9 项） |
-| 部署形态 | Claude marketplace | Agent Plugins 1.0 + marketplace.json + install.ps1 |
+| 写 skill | ❌（MCP `write` 可写域不含 `skills/`，与所有 MCP 型 harness 一致） | ✅ 本地工具 add_skill / update_skill / validate_skill 走 REST，支持 `path` 上传本地 SKILL.md（v0.4.0） |
+| 后台任务查询 | ❌（MCP 面无 task 工具） | ✅ task_status（GET /api/v1/tasks/{id}，`ov task status` 等价） |
+| 自诊断 | ov-memory-doctor skill + 脚本 | ov-doctor.mjs（10 项，含技能 REST 接口检查） |
 
-未移植（有意）：官方 SessionStart 的 profile 注入（Copilot 场景价值中等，skill 已覆盖大部分）、PreCompact 归档注入（VS Code 无对应事件）。
+未移植（有意）：SubagentStart/SubagentStop（Copilot 转录文件的子代理结构未验证）、压缩接管 takeover（VS Code 自管压缩，无接管面）、statusline（VS Code 无插件 statusline）、召回再摘要客户端压缩（服务端 context 面 max_tokens 已控注入预算，本地注入块限 8 条）。
+
+**勘误**：本文早期版本称"PreCompact 无对应事件"——错误。VS Code 插件 hooks 与工作区 hooks 支持相同的 8 个生命周期事件（SessionStart / UserPromptSubmit / PreToolUse / PostToolUse / PreCompact / SubagentStart / SubagentStop / Stop），v0.4.0 起本插件接入其中 5 个。
+
+
 
 ## transcript 格式风险
 

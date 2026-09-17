@@ -19,7 +19,10 @@ while (($n = $stdin.Read($buf, 0, $buf.Length)) -gt 0) { $ms.Write($buf, 0, $n) 
 $in = [System.Text.Encoding]::UTF8.GetString($ms.ToArray())
 
 try { $ev = $in | ConvertFrom-Json } catch { exit 0 }
-if ($ev.hook_event_name -ne "Stop") { exit 0 }
+# Stop: session end (terminal state). PreCompact: VS Code is about to compact
+# the conversation — archive + commit the transcript delta first (official
+# Claude Code plugin does commit-only at PreCompact; same semantics here).
+if ($ev.hook_event_name -ne "Stop" -and $ev.hook_event_name -ne "PreCompact") { exit 0 }
 
 $sessionId = $ev.session_id
 if (-not $sessionId) { exit 0 }
