@@ -1,11 +1,10 @@
 {
   "name": "openviking-team",
   "owner": {
-    "name": "51WORLD project-dev team",
-    "email": "radial.hks@gmail.com"
+    "name": "OpenViking Copilot plugin maintainers"
   },
   "metadata": {
-    "description": "51WORLD 项目开发团队 Copilot 插件市场（OpenViking 记忆集成）",
+    "description": "Team Copilot plugin marketplace (OpenViking memory integration)",
     "version": "1.0.0"
   },
   "plugins": [

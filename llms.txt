@@ -7,8 +7,8 @@
 
 - 这是一个 GitHub Copilot 插件（Agent Plugins 1.0 格式），提供 OpenViking 团队记忆集成
 - 目标环境：Windows + VS Code（≥1.102）+ Node ≥18；公司 Copilot 无插件策略限制
-- 团队 OpenViking 服务器：`http://10.67.8.199:1933`（内网）
-- **凭据是敏感信息**：每个成员有私发的 user key。你没有它，也不知道它——安装过程中必须停下来向用户索要（见流程第 4 步的暂停点）。绝不要编造、留空占位符或跳过
+- 团队 OpenViking 服务器：内网地址，由管理员随 user key 一并私发（流程第 4 步向用户索要）
+- **凭据是敏感信息**：每个成员有私发的 user key 和团队服务器地址（管理员会一并私发）。这两样你都不知道——安装过程中必须停下来向用户索要（见流程第 4 步的暂停点）。绝不要编造、留空占位符或跳过
 
 ## 安装流程（对 Windows 用户，推荐路径 1）
 
@@ -46,18 +46,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File <目录>\install.ps1 -ApiKey
 3. 找到 **openviking-copilot** → 点 Install
 4. `Ctrl+Shift+P` → `Developer: Reload Window`
 
-私有仓库需用户本机有 GitHub 访问凭据（公开查找失败时 VS Code 会回退直接 clone）。
+仓库为公开仓库，VS Code 直接拉取。
 
-### 第 4 步：⚠️ 暂停点——向用户索要 user key
+### 第 4 步：⚠️ 暂停点——向用户索要凭据
 
 到此插件本体已装好，但凭据还没写。**你必须在这里停下，明确告诉用户：**
 
-"请把管理员（chenjie）私发给你的 user key 粘贴给我，我来写入凭据文件。如果还没有 key，先找管理员开通，再回来继续。"
+"请把团队管理员私发给你的两样东西粘贴给我：① 服务器地址（形如 http://内网IP:1933）② 你的 user key。如果还没拿到，先找团队管理员开通，再回来继续。"
 
-拿到 key 后写入 `%USERPROFILE%\.openviking\ovcli.conf`：
+拿到后写入 `%USERPROFILE%\.openviking\ovcli.conf`：
 
 ```json
-{ "url": "http://10.67.8.199:1933", "api_key": "<用户粘贴的真实key>" }
+{ "url": "<用户提供的真实服务器地址>", "api_key": "<用户提供的真实key>" }
 ```
 
 **禁止**：用占位符（`xxx`、空值）写这个文件然后继续；把 key 写进任何 git 仓库或聊天记录之外的文件。
@@ -71,15 +71,15 @@ node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\ov-doctor.mjs
 逐项解读输出（9 项体检，PASS/FAIL 带修复提示）：
 - 有 FAIL → 按 FAIL 项的"修复"提示处理；处理后重跑 doctor
 - `VS Code 插件注册` 项走路径 1 时可能显示未注册（doctor 检查的是 chat.pluginLocations 方式）——若用户走了市场安装且插件已在 @agentPlugins 里显示为 Installed，此 FAIL 可忽略，其他项全绿即成功
-- 全绿 → 安装完成。告诉用户：新开 Copilot 会话随便问个问题（如"eidcolorcontrol 当时怎么做的"），之后可以用了
+- 全绿 → 安装完成。告诉用户：新开 Copilot 会话随便问个问题（如"帮我回顾之前做过的类似功能"），之后可以用了
 
 ## 常见问题（详见 docs/troubleshooting.md）
 
 | 症状 | 处理 |
 |---|---|
-| 搜不到 @agentPlugins 或无 openviking-copilot | 确认 settings.json 的 marketplaces 行已保存且 Reload Window 过；私有仓库需 GitHub 凭据 |
+| 搜不到 @agentPlugins 或无 openviking-copilot | 确认 settings.json 的 marketplaces 行已保存且 Reload Window 过 |
 | doctor 报 401 / key 无效 | key 抄错或失效 → 让用户和管理员核对，重写 ovcli.conf |
-| doctor 报服务不通 | `curl http://10.67.8.199:1933/health`；内网/VPN 问题 |
+| doctor 报服务不通 | `curl <your-openviking-server-url>/health`；内网/VPN 问题 |
 | 改了插件不生效 | VS Code：Check for Extension Updates；CLI 装的需重装（缓存陷阱） |
 
 ## 升级
@@ -90,4 +90,4 @@ node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\ov-doctor.mjs
 
 - 不要修改仓库的 servers/ 和 skills/（官方上游同步目录）
 - 不要把本仓库的文档/结构当成其他用途的模板复制——AGPL-3.0，引用需守许可证
-- 排障超出本文范围时，让用户跑 doctor 并把输出发给管理员 chenjie，不要自己猜测服务器端问题
+- 排障超出本文范围时，让用户跑 doctor 并把输出发给团队管理员，不要自己猜测服务器端问题

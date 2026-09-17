@@ -8,12 +8,12 @@ OpenViking 记忆平台 × GitHub Copilot（VS Code + Copilot CLI）集成插件
 
 > **让 Copilot 帮你装**：把本仓库地址发给你的 Copilot 助手，加一句"读 llms.txt 帮我安装"——它会按仓库根的 [llms.txt](llms.txt) 流程引导完成（只在 user key 环节需要你提供管理员私发的凭据）。
 
-> 前置：团队 OpenViking 服务（内网），由管理员（chenjie）为每人签发 user key。
+> 前置：团队 OpenViking 服务（内网），由团队管理员为每人签发 user key。
 
 ## 快速开始（组员）
 
 ```jsonc
-// VS Code 用户级 settings.json 加一行（私有仓库市场原生支持）
+// VS Code 用户级 settings.json 加一行（仓库市场原生支持，私有仓库亦可）
 "chat.plugins.marketplaces": ["radial-hks/copilot-ov-capture"]
 // 然后 Extensions 面板搜 @agentPlugins → Install openviking-copilot
 ```

@@ -2,13 +2,13 @@
 
 > 本文从 README 分拆，面向**首次安装**的团队成员。日常使用见 [usage.md](usage.md)，排障见 [troubleshooting.md](troubleshooting.md)。
 
-前置：团队 OpenViking 服务（内网），由管理员（chenjie）为每人签发 user key（私发，一串 token）。
+前置：团队 OpenViking 服务（内网），由团队管理员为每人签发 user key（私发，一串 token）。
 
 ## 三条安装路径，按推荐顺序
 
 ### 路径 1：VS Code 插件市场注册（推荐，一次配置自动升级）
 
-VS Code 原生支持私有仓库市场——settings.json 加一行，之后全程图形界面：
+VS Code 原生支持仓库市场——settings.json 加一行，之后全程图形界面：
 
 ```jsonc
 // 用户级 settings.json（Ctrl+Shift+P → Preferences: Open User Settings (JSON)）
@@ -20,13 +20,13 @@ VS Code 原生支持私有仓库市场——settings.json 加一行，之后全�
 2. 在列表中找到 **openviking-copilot** → 点 Install（首次会弹出市场信任确认）
 3. 升级自动：VS Code 每 24 小时检查更新（`Extensions: Check for Extension Updates` 可手动触发），有新版本时界面出现 Update 按钮
 
-> 私有仓库支持：公开查找失败时 VS Code 会回退直接 clone（需要你本机有 GitHub 访问凭据）。
+> 私有仓库同样支持：公开查找失败时 VS Code 会回退直接 clone（需本机 GitHub 凭据）。本仓库当前为公开。
 
 **装完插件本体后，还差凭据**（MCP/捕获上传器需要）：
 
 ```powershell
 # 手工创建 %USERPROFILE%\.openviking\ovcli.conf，内容：
-{ "url": "http://10.67.8.199:1933", "api_key": "<你的user-key>" }
+{ "url": "<your-openviking-server-url>", "api_key": "<你的user-key>" }
 ```
 
 或跑一次 install.ps1 只为写凭据（`-ApiKey` 参数）。
@@ -55,7 +55,7 @@ copilot plugin list
 
 ```powershell
 cd <仓库目录>
-powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -ApiKey <你的user-key>
+powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -ApiKey <你的user-key> -ServerUrl <你的-openviking-server-url>
 ```
 
 安装器做三件事（幂等，可重复运行）：
@@ -77,13 +77,13 @@ node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\ov-doctor.mjs
 1. VS Code：`Ctrl+Shift+P` → **Developer: Reload Window**
 2. Copilot Chat（Agent 模式）问：`列出你的 MCP 工具，并用 openviking 的 health 检查服务状态`
    - ✅ 预期：报告 openviking server healthy
-3. **自动召回验证**（核心功能）：在新会话问一个和团队历史工作相关的问题，如"eidcolorcontrol 当时怎么做的"——Copilot 会自动带上相关记忆上下文（`Developer: Show Agent Debug Logs` 可看到 `<openviking-context>` 注入）
+3. **自动召回验证**（核心功能）：在新会话问一个和团队历史工作相关的问题，如"帮我回顾之前做过的类似功能"——Copilot 会自动带上相关记忆上下文（`Developer: Show Agent Debug Logs` 可看到 `<openviking-context>` 注入）
 4. 自动捕获验证：随便问一个实质问题，会话结束后：
    ```powershell
    Get-Content %USERPROFILE%\.openviking\copilot-capture\uploader.log -Tail 5
    ```
    - ✅ 预期：出现 `session <id>: +N messages, committed`
-5. Studio：浏览器打开 `http://10.67.8.199:1933/studio`，用**自己的 user key** 登录，Sessions 页应能看到 `import__copilot__<会话id>`
+5. Studio：浏览器打开 `<your-openviking-server-url>/studio`，用**自己的 user key** 登录，Sessions 页应能看到 `import__copilot__<会话id>`
 
 ## 更新插件
 
@@ -93,5 +93,5 @@ cd <仓库目录> && git pull
 # 路径 2 用户：重装即升级（缓存陷阱——不重装不生效）
 copilot plugin install openviking-copilot@openviking-team
 # 路径 3 用户：重新运行 install.ps1（会覆盖插件目录，凭据与 settings 合并保留）
-powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -ApiKey <你的user-key>
+powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -ApiKey <你的user-key> -ServerUrl <你的-openviking-server-url>
 ```

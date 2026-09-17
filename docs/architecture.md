@@ -1,6 +1,6 @@
 # 架构与维护指南
 
-> 本文从 README 分拆，面向维护者（chenjie / 后续接手人）。组员文档见 [installation.md](installation.md) / [usage.md](usage.md) / [troubleshooting.md](troubleshooting.md)。
+> 本文从 README 分拆，面向维护者（仓库 owner / 后续接手人）。组员文档见 [installation.md](installation.md) / [usage.md](usage.md) / [troubleshooting.md](troubleshooting.md)。
 
 ## 目录结构
 
@@ -68,7 +68,7 @@ node <插件目录>\scripts\uploader.mjs --session <会话id> --dry-run
 ### 签发 user key
 
 ```bash
-curl -X POST http://10.67.8.199:1933/api/v1/admin/accounts/unreal-dev/users \
+curl -X POST <your-openviking-server-url>/api/v1/admin/accounts/<your-account-id>/users \
   -H "X-API-Key: <admin-key>" -H "Content-Type: application/json" \
   -d '{"user_id": "<组员名>"}'
 ```

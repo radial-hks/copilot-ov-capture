@@ -15,7 +15,7 @@
 - **会话自动捕获**：会话结束后 Stop hook 自动触发，记忆提取由服务端异步完成（1-2 分钟）
 - **手动检索**：Copilot 里说"用 openviking 搜一下 XXX"（openviking MCP 工具）
 - **显式沉淀**：会话中随时说"把这个经验 remember 到 openviking"——适合你想确保入库的结论
-- **Studio**：`http://10.67.8.199:1933/studio`，user key 登录，可看/搜自己的全部记忆与会话
+- **Studio**：`<your-openviking-server-url>/studio`，user key 登录，可看/搜自己的全部记忆与会话
 
 ## 出问题怎么办（自诊断）
 
@@ -49,4 +49,4 @@ node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\ov-doctor.mjs
 | 工具调用的输入/输出 | **不上传**（低价值，按官方 ingest 策略丢弃） |
 | 与 OpenViking 无关的 VS Code 操作 | **不上传**（hook 只在 Copilot 会话生命周期触发） |
 
-数据归属：account `unreal-dev`，user 你本人；assistant peer 为 `copilot/<模型名>`，user peer 取工作区 peer（或 git email）。
+数据归属：account（团队内部约定），user 你本人；assistant peer 为 `copilot/<模型名>`，user peer 取工作区 peer（或 git email）。

@@ -1,6 +1,6 @@
 # install.ps1 — OpenViking Copilot plugin installer (one command for team members).
 # Usage:
-#   powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -ApiKey <your-user-key> [-ServerUrl http://10.67.8.199:1933]
+#   powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -ApiKey <your-user-key> [-ServerUrl <your-openviking-server-url>]
 #
 # What it does (idempotent, safe to re-run):
 #   1. Copies this repo's plugin/ to %USERPROFILE%\.openviking\copilot-ov-plugin
@@ -14,7 +14,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$ApiKey,
-    [string]$ServerUrl = "http://10.67.8.199:1933"
+    [string]$ServerUrl = "<your-openviking-server-url>"
 )
 
 $ErrorActionPreference = "Stop"
