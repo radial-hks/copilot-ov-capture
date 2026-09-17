@@ -36,7 +36,7 @@ docs/                            # 文档（安装/使用/排障/本文）
 - **提取策略**对齐官方 ingest：user/assistant 文本保留，tool I/O 丢弃，peer_id 取 `copilot/<model>` 与工作区 peer
 - **workspace peer 推导**（官方 ovcli 工作区配置同语义）：`.openviking/config.json` 的 `peer.id` > 归一化 git origin > 仓库根；非 git 目录不发 peer
 - **本地 MCP 工具**：服务端 MCP 面刻意不暴露的写路径/任务面由 `localToolProvider` 扩展点补齐——`add_skill` / `update_skill` / `validate_skill`（REST `/api/v1/skills*`，`path` 参数走 temp_upload 上传本地 SKILL.md）与 `task_status`（`GET /api/v1/tasks/{id}`）。`tools/list` 时拼在服务端 15 个工具后，`tools/call` 时本地拦截；凭据/身份头与代理共用同一解析链。代码放 `local-tools/` 而非 `servers/`——后者上游同步时整目录覆盖，本地修改会静默丢失
-- **召回带 session_id**（官方接入约定①）：auto-recall 转发 `import__copilot__<id>`（与捕获管线同一 OV 会话），激活服务端 query expansion 与跨轮去重台账
+- **召回带 session_id**（官方接入约定①）：auto-recall 转发 `import__copilot__<id>`（与捕获管线同一 OV 会话），激活服务端跨轮去重台账。注意：去重收益来自 session_id，与 query_expansion 是独立开关——鉴于实测团队服务器 expansion/rerank 在长查询下超 15s、且检索路径存在间歇性 12s+ 抖动，auto-recall 默认发送短查询（≤400 字符）并显式关闭 expansion/rewrite；命中慢请求时 fetch 20s 超时后该轮静默跳过，绝不阻塞 prompt
 - **profile 注入**（SessionStart）：vendored 官方 `profile-inject.mjs`（profile.md + preferences/entities 清单，6000 token CJK 感知预算）；离线/未配置静默跳过，绝不阻塞会话启动
 - **uri-guard**（PreToolUse）：文件工具收到 `viking://` 路径 → deny 并提示改用 openviking MCP 工具；terminal 命令含 `viking://` → 放行 + systemMessage 提示；openviking MCP 工具自身放行。VS Code 忽略 matcher，过滤在脚本内做
 - **PreCompact 归档**：压缩前触发捕获管线（上传增量 + commit keep 0），长会话压缩不丢未归档上下文；官方 CC 同语义（PreCompact 只 commit）

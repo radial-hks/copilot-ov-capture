@@ -40,6 +40,7 @@ OpenViking 记忆平台 × GitHub Copilot（VS Code + Copilot CLI）集成插件
 
 ## 版本
 
+- 0.4.1 — 自动召回保守化：查询截短 400 字符 + `query_expansion`/`rewrite` 显式关闭（实测团队服务器的 expansion/rerank 在长查询下超 15s；session_id 去重收益不受影响，检索路径仍有间歇性 12s+ 抖动，hook 静默降级兜底）
 - 0.4.0 — 能力面补全：本地技能工具（add/update/validate_skill + `path` 上传）+ task_status + SessionStart profile 注入 + PreCompact 归档 + uri-guard + 召回带 session_id + ov-doctor 技能接口检查
 - 0.3.0 — auto-recall 注入 + ov-doctor 自诊断 + marketplace 分发
 - 0.2.0 — workspace peer 推导（按仓库精准召回）

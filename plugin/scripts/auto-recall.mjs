@@ -52,10 +52,17 @@ export async function runRecall(ev = {}) {
 
   try {
     const body = {
-      query: prompt.slice(0, 2000),
+      // Recall queries stay short: the intent lives in the prompt's opening,
+      // and long queries push the server's expansion/rerank stage past the
+      // hook budget (measured on the team server: >15s for long queries with
+      // default expansion, <2s without).
+      query: prompt.slice(0, 400),
       mode: "context",
-      // Same OV session the capture pipeline writes to: enables server-side
-      // query expansion + the cross-turn dedup ledger (official convention #1).
+      // session_id carries official convention #1 (cross-turn dedup ledger +
+      // session-aware recall) — independent of query_expansion, so the slow
+      // expansion stage can stay off while keeping the dedup benefit.
+      query_expansion: "off",
+      rewrite: "off",
       ...(ev.session_id ? { session_id: OV_SESSION_PREFIX + ev.session_id } : {}),
       ...(peer ? { peer_scope: "actor" } : {}),
     };

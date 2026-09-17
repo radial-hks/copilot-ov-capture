@@ -502,6 +502,15 @@ test("auto-recall forwards session_id and injects recall hits (mock server)", as
     const sent = JSON.parse(requests.find((r) => r.url.includes("/api/v1/search/search")).body);
     assert.equal(sent.session_id, "import__copilot__s-123");
     assert.equal(sent.mode, "context");
+    // Conservative auto-recall defaults: no expansion/rewrite (slow stage on
+    // the team server), query capped at 400 chars.
+    assert.equal(sent.query_expansion, "off");
+    assert.equal(sent.rewrite, "off");
+    assert.ok(sent.query.length <= 400);
+    const longPrompt = "explain the deploy pipeline config ".repeat(60); // ~2100 chars
+    await runRecall({ prompt: longPrompt, cwd: os.tmpdir(), session_id: "s-x" });
+    const sentLong = JSON.parse(requests.filter((r) => r.url.includes("/api/v1/search/search")).pop().body);
+    assert.equal(sentLong.query.length, 400);
     assert.match(out.hookSpecificOutput.additionalContext, /deploy via gh actions/);
     assert.match(out.hookSpecificOutput.additionalContext, /source="auto-recall"/);
     // Trivial prompts never hit the server.
