@@ -43,6 +43,7 @@ copilot plugin install openviking-copilot@openviking-team
 
 ## 版本
 
+- 0.4.7 — 修复 VS Code 会话不同步（hook 正常入队但 uploader.log 报 `transcript missing`）：VS Code 的 transcript 是 `transcripts/<session-id>.jsonl` 文件，≤0.4.6 的 `uploader.mjs` 只把 `events.jsonl` 结尾的路径当文件，其余按目录追加 `\events.jsonl`，导致读取失败、根本不发请求。两处入口（队列 `transcriptDirFromQueueEntry` 与单会话 `--transcript-dir`）放宽为任意 `.jsonl` 文件即文件，目录分支保留（CLI session-state 布局兼容）；uploader 增加 main guard（与 hook-runner 同模式），新增单元测试（四种路径形态）与离线 dry-run e2e（队列驱动 + `--transcript-dir`，fake HOME/凭据，`--dry-run` 在任何网络调用前返回）
 - 0.4.6 — 修复 0.4.5 后仍复现的 `Cannot find module 'E:\scripts\hook-runner.mjs'`：`${PLUGIN_ROOT}` 在 PowerShell 是 PS 变量语法而非环境变量引用，宿主选 `command` 键经 PS 执行时无论是否注入 env 都会插值为空；且旧版 CLI 不认 `windows`/`powershell` 方言键。hooks.json 四方言统一改为 `node -e` 运行时自定位引导（env `PLUGIN_ROOT` 候选逐一校验 → cwd → `~/.copilot/installed-plugins/openviking-team/openviking-copilot` 固定路径兜底），命令串不含 `$`/反引号/嵌套双引号，三种 shell 均原样通过；找不到 runner 时静默退出 0（hook 降级不阻塞会话）
 - 0.4.5 — 修复旧版 Copilot CLI 下 hooks 静默失效（`Cannot find module 'D:\scripts\hook-runner.mjs'`）：旧版 CLI 不做 `${PLUGIN_ROOT}` 文本展开、PowerShell 将其作变量插值为空；hooks.json 为每事件提供四方言命令（command/bash 用 `${PLUGIN_ROOT}`，windows/powershell 用 `$env:PLUGIN_ROOT` + 显式 powershell 前缀）；install.ps1 退役（标准安装流程为 CLI 市场 / VS Code 市场）；ov-doctor 新增 Hook 命令路径检查并把插件注册检查扩展到 CLI 安装路径
 - 0.4.4 — 修复 hooks 静默失效：`timeout` 字段改为 Copilot CLI 认可的 `timeoutSec`（未知字段会导致整个 hook 条目被丢弃）；hook 命令改回 `${PLUGIN_ROOT}/scripts/hook-runner.mjs` 绝对路径（CLI 执行插件 hook 时 cwd=插件目录、VS Code 时 cwd=工作区，相对路径无法两者兼容；`${PLUGIN_ROOT}` 由宿主在命令串展开并注入环境变量）

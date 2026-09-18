@@ -2,7 +2,8 @@
 /**
  * OpenViking × GitHub Copilot capture pipeline — uploader.
  *
- * Reads Copilot agent session transcripts (events.jsonl), extracts user/assistant
+ * Reads Copilot agent session transcripts (CLI session-state events.jsonl or
+ * VS Code transcripts/<session-id>.jsonl), extracts user/assistant
  * text turns, and replays them into an OpenViking server via the session API:
  *   ensure_session -> POST /api/v1/sessions/{id}/messages/batch (<=100) -> commit
  *
@@ -22,7 +23,8 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync, readdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -346,11 +348,14 @@ async function uploadSession(cfg, sessionId, transcriptPath, cwd, { dryRun = fal
 
 // ------------------------------------------------------------- driver -----
 
-function transcriptDirFromQueueEntry(entry) {
-  // transcript_path may point at the events.jsonl file or at the session dir.
+export function transcriptDirFromQueueEntry(entry) {
+  // transcript_path may point at a transcript FILE — CLI session-state
+  // events.jsonl or a VS Code transcripts/<session-id>.jsonl — or at the
+  // session dir (CLI layout). Any .jsonl path is the file itself; everything
+  // else is treated as the session dir.
   let p = entry.transcript_path || "";
   if (!p && entry.session_id) p = join(SESSION_STATE_ROOT, entry.session_id);
-  if (/events\.jsonl$/i.test(p)) return { dir: dirname(p), file: p };
+  if (/\.jsonl$/i.test(p)) return { dir: dirname(p), file: p };
   return { dir: p, file: join(p, "events.jsonl") };
 }
 
@@ -412,7 +417,7 @@ async function main() {
     const dir = tIdx >= 0 ? args[tIdx + 1] : join(SESSION_STATE_ROOT, sessionId);
     const cIdx = args.indexOf("--cwd");
     const cwd = cIdx >= 0 ? args[cIdx + 1] : null;
-    const file = /events\.jsonl$/i.test(dir) ? dir : join(dir, "events.jsonl");
+    const file = /\.jsonl$/i.test(dir) ? dir : join(dir, "events.jsonl");
     if (!existsSync(file)) { log(`session ${sessionId}: transcript missing (${file})`); process.exit(0); }
     await uploadSession(cfg, sessionId, file, cwd, { dryRun });
     return;
@@ -420,4 +425,6 @@ async function main() {
   await processQueue(cfg, { dryRun });
 }
 
-main().catch(e => { log(`FATAL: ${e.message}`); console.error(e.message); process.exit(1); });
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolvePath(process.argv[1])) {
+  main().catch(e => { log(`FATAL: ${e.message}`); console.error(e.message); process.exit(1); });
+}

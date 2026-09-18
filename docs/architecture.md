@@ -34,7 +34,7 @@ install.ps1 已移除               # 安装统一走 CLI 市场 / VS Code 市�
 
 - **hook 快 / uploader 慢分离**：hook <1s 只追加队列；上传分离进程（hooks 要求 <5s）
 - **幂等**：字节偏移游标（`state\<session_id>.json`）+ OV 会话 ID `import__copilot__<id>`；重跑/崩溃/双启动不重不漏
-- **提取策略**对齐官方 ingest：user/assistant 文本保留，tool I/O 丢弃，peer_id 取 `copilot/<model>` 与工作区 peer
+- **transcript 路径双形态**：宿主给 hook 的 `transcript_path` 有两种形态——CLI 是目录（`~/.copilot/session-state/<id>/`，内含 `events.jsonl`），VS Code 是文件（`...\GitHub.copilot-chat\transcripts\<session-id>.jsonl`）。uploader 的路径判断只认 `.jsonl` 结尾即文件、其余按目录追加 `events.jsonl`（0.4.6 及更早只认 `events.jsonl` 结尾，VS Code 文件被误判为目录 → `transcript missing`，0.4.7 修复）。游标对两种形态都是"该文件的字节偏移"，state 键仍为 session_id，形态无关
 - **workspace peer 推导**（官方 ovcli 工作区配置同语义）：`.openviking/config.json` 的 `peer.id` > 归一化 git origin > 仓库根；非 git 目录不发 peer
 - **本地 MCP 工具**：服务端 MCP 面刻意不暴露的写路径/任务面由 `localToolProvider` 扩展点补齐——`add_skill` / `update_skill` / `validate_skill`（REST `/api/v1/skills*`，`path` 参数走 temp_upload 上传本地 SKILL.md）与 `task_status`（`GET /api/v1/tasks/{id}`）。`tools/list` 时拼在服务端 15 个工具后，`tools/call` 时本地拦截；凭据/身份头与代理共用同一解析链。代码放 `local-tools/` 而非 `servers/`——后者上游同步时整目录覆盖，本地修改会静默丢失
 - **召回带 session_id**（官方接入约定①）：auto-recall 转发 `import__copilot__<id>`（与捕获管线同一 OV 会话），激活服务端跨轮去重台账。注意：去重收益来自 session_id，与 query_expansion 是独立开关——鉴于实测团队服务器 expansion/rerank 在长查询下超 15s、且检索路径存在间歇性 12s+ 抖动，auto-recall 默认发送短查询（≤400 字符）并显式关闭 expansion/rewrite；命中慢请求时 fetch 20s 超时后该轮静默跳过，绝不阻塞 prompt

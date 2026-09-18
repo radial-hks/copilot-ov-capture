@@ -13,4 +13,5 @@
 | add_skill/task_status 报任务 failed | `task_status` 带 `include_events: true` 看 execution_events 里的错误详情；常见：frontmatter 缺 name/description、name 超 64 字符或含非法字符（先跑 `validate_skill`）、目标 `viking://agent/skills` 无权限（默认个人根无需权限） |
 | 中文乱码 | 已修复（UTF-8 显式编解码）；旧版本捕获的乱码数据仅影响调试镜像，不影响上传 |
 | 改了插件源码没生效 | Copilot CLI 缓存陷阱：重新 `copilot plugin install openviking-copilot@openviking-team`；VS Code 市场安装用户 Reload Window 或检查插件更新 |
-| hook 报 `Cannot find module '<盘符>:\scripts\hook-runner.mjs'` | hooks.json ≤0.4.5 的命令串含 `${PLUGIN_ROOT}` 或 `$env:PLUGIN_ROOT`，PowerShell/旧版 CLI 下插值为空 → 升级插件到 ≥0.4.6（CLI 用户重装覆盖缓存），并跑 ov-doctor 的"Hook 命令路径"检查（0.4.6 起校验命令为 `node -e` 自定位引导且不含 `$`） |
+| uploader.log 报 `transcript missing`，路径末尾多出 `\<session-id>.jsonl\events.jsonl` | VS Code 的 transcript 是 `transcripts\<session-id>.jsonl` **文件**，≤0.4.6 的上传器只把 `events.jsonl` 结尾的路径当文件、其余按目录追加 → 升级到 ≥0.4.7 后重跑 `node "<插件目录>\scripts\uploader.mjs"`（队列未清空时自动补传） |
+| PowerShell 手工看 JSONL 乱码/解析报错 | `Get-Content ... -Encoding UTF8`（PS 5.1 默认非 UTF-8）；这是查看问题，不影响插件自身的 UTF-8 处理 |

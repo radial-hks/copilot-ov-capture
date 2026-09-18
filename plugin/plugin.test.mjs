@@ -616,6 +616,70 @@ test("capture.mjs queues Stop and PreCompact events without PowerShell", async (
   }
 });
 
+test("uploader path resolution accepts VS Code transcript files and CLI session dirs", async () => {
+  const { transcriptDirFromQueueEntry } = await import(join(PLUGIN_ROOT, "scripts", "uploader.mjs"));
+  // VS Code hands hooks a transcript FILE: transcripts/<session-id>.jsonl.
+  // 0.4.6 regression: only events.jsonl counted as a file, so this path gained
+  // an appended \events.jsonl and the uploader reported transcript missing.
+  const vscodeFile = join("C:", "x", "GitHub.copilot-chat", "transcripts", "a880544b.jsonl");
+  assert.deepEqual(transcriptDirFromQueueEntry({ transcript_path: vscodeFile }), { dir: dirname(vscodeFile), file: vscodeFile });
+  // CLI session-state layout: the events.jsonl file itself.
+  const cliFile = join("C:", "x", ".copilot", "session-state", "s1", "events.jsonl");
+  assert.deepEqual(transcriptDirFromQueueEntry({ transcript_path: cliFile }), { dir: dirname(cliFile), file: cliFile });
+  // CLI layout, session dir form: still resolves to its events.jsonl.
+  const cliDir = join("C:", "x", ".copilot", "session-state", "s1");
+  assert.deepEqual(transcriptDirFromQueueEntry({ transcript_path: cliDir }), { dir: cliDir, file: join(cliDir, "events.jsonl") });
+  // No transcript_path: falls back to the session-state dir.
+  const fallback = transcriptDirFromQueueEntry({ session_id: "s2" });
+  assert.equal(fallback.dir, join(os.homedir(), ".copilot", "session-state", "s2"));
+});
+
+test("uploader dry-run reads VS Code transcript files end to end (queue + --transcript-dir)", async () => {
+  const baseDir = join(os.tmpdir(), `ov-uploader-${process.pid}-${Date.now()}`);
+  const transcriptsDir = join(baseDir, "transcripts");
+  const sessionId = "vs-e2e-1";
+  const transcriptFile = join(transcriptsDir, `${sessionId}.jsonl`);
+  mkdirSync(transcriptsDir, { recursive: true });
+  writeFileSync(transcriptFile, [
+    JSON.stringify({ id: "e1", timestamp: "2026-09-18T00:00:00Z", type: "user.message", data: { content: "帮我看看上传问题" } }),
+    JSON.stringify({ id: "e2", timestamp: "2026-09-18T00:00:01Z", type: "assistant.message", data: { turnId: "t1", phase: "final_answer", chunkIndex: 0, content: "已修复" } }),
+    "",
+  ].join("\n"));
+  // Queue-driven run: the capture hook queues the VS Code transcript FILE path.
+  const fakeHome = join(baseDir, "home");
+  mkdirSync(join(fakeHome, ".openviking", "copilot-capture"), { recursive: true });
+  writeFileSync(join(fakeHome, ".openviking", "copilot-capture", "queue.jsonl"),
+    `${JSON.stringify({ session_id: sessionId, transcript_path: transcriptFile, cwd: baseDir, timestamp: "2026-09-18T00:00:02Z" })}\n`);
+  const env = {
+    ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== "PLUGIN_ROOT" && k !== "OPENVIKING_URL" && k !== "OPENVIKING_API_KEY" && k !== "OPENVIKING_CLI_CONFIG_FILE")),
+    HOME: fakeHome,
+    OPENVIKING_URL: "http://127.0.0.1:9", // never contacted: --dry-run returns before any fetch
+    OPENVIKING_API_KEY: "k",
+  };
+  try {
+    // Queue path (what the Stop hook actually drives): parses both turns.
+    let r = spawnSync(process.execPath, [join(PLUGIN_ROOT, "scripts", "uploader.mjs"), "--dry-run"], { env, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, new RegExp(`\\[dry-run\\] session ${sessionId}: 2 events -> 2 turns`));
+    // Single-session path (--transcript-dir accepting a file): same transcript.
+    r = spawnSync(process.execPath, [join(PLUGIN_ROOT, "scripts", "uploader.mjs"), "--session", sessionId, "--transcript-dir", transcriptFile, "--cwd", baseDir, "--dry-run"], { env, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, new RegExp(`\\[dry-run\\] session ${sessionId}: 2 events -> 2 turns`));
+    // Single-session path with a CLI-style session DIR still works.
+    const cliDir = join(baseDir, "s-cli");
+    mkdirSync(cliDir, { recursive: true });
+    writeFileSync(join(cliDir, "events.jsonl"), `${JSON.stringify({ type: "user.message", data: { content: "cli turn" } })}\n`);
+    r = spawnSync(process.execPath, [join(PLUGIN_ROOT, "scripts", "uploader.mjs"), "--session", "s-cli", "--transcript-dir", cliDir, "--dry-run"], { env, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /session s-cli: 1 events -> 1 turns/);
+    // Importing the module must not execute main() (guard) — safe to import.
+    const mod = await import(join(PLUGIN_ROOT, "scripts", "uploader.mjs"));
+    assert.equal(typeof mod.transcriptDirFromQueueEntry, "function");
+  } finally {
+    rmSync(baseDir, { recursive: true, force: true });
+  }
+});
+
 test("auto-recall forwards session_id and injects recall hits (mock server)", async () => {
   const { runRecall } = await import(join(PLUGIN_ROOT, "scripts", "auto-recall.mjs"));
   const requests = [];
