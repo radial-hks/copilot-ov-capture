@@ -31,14 +31,16 @@
 ## 出问题怎么办（自诊断）
 
 ```powershell
-node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\ov-doctor.mjs
+node "%USERPROFILE%\.copilot\installed-plugins\openviking-team\openviking-copilot\scripts\ov-doctor.mjs"
 ```
 
 ```bash
-node ~/.openviking/copilot-ov-plugin/scripts/ov-doctor.mjs
+node ~/.copilot/installed-plugins/openviking-team/openviking-copilot/scripts/ov-doctor.mjs
 ```
 
-10 项体检（Node / 凭据 / 连通 / 鉴权 / 技能接口 / peer / 队列 / 游标 / 上传日志 / VS Code 注册），FAIL 项自带修复提示。先把 doctor 结果发给管理员，而不是截图聊天窗口。
+> 路径不存在时先 `copilot plugin list` 找到插件目录；VS Code 市场安装用户路径在扩展目录下，同理对路径运行。
+
+9 项体检（Node / 凭据 / 连通 / 鉴权 / 技能接口 / peer / 捕获管线 / 插件注册 / Hook 命令路径），FAIL 项自带修复提示。其中 **Hook 命令路径** 直接对应"hooks 静默失效"类问题（`Cannot find module 'D:\scripts\...'`），必须 PASS。先把 doctor 结果发给管理员，而不是截图聊天窗口。
 
 ## 按项目精准召回（workspace peer）
 
