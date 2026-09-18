@@ -40,7 +40,10 @@ export function runHook(name, args = process.argv.slice(3), { pluginRoot = plugi
 
 async function main() {
   const code = await runHook(process.argv[2]);
-  process.exit(code);
+  // process.exit() while the spawned child's libuv handles are still closing
+  // crashes node on Windows (uv assert in src/win/async.c). Setting exitCode
+  // lets the loop drain, then node exits naturally with the hook's code.
+  process.exitCode = code;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolvePath(process.argv[1])) {

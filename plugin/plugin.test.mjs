@@ -10,7 +10,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
@@ -536,10 +536,41 @@ test("hook runner locates scripts without inherited PLUGIN_ROOT", () => {
   assert.equal(result.status, 0, result.stderr);
 });
 
+test("hook scripts exit cleanly after stdout writes (Windows libuv crash regression)", () => {
+  // Up to 0.4.8 every hook script called process.exit(0) right after an async
+  // process.stdout.write(); node on Windows crashed nondeterministically in
+  // libuv (uv assert in src/win/async.c, exit code 0xC0000409 — bash reports
+  // 9). The fix lets main() return and sets exitCode so the loop drains. Each
+  // script is exercised with stdin several times: the crash fired on ~half of
+  // invocations pre-fix, so 4 rounds x 3 scripts is a sensitive probe.
+  const runs = [
+    { script: "scripts/session-start.mjs", input: '{"session_id":"s"}' },
+    { script: "scripts/uri-guard.mjs", input: JSON.stringify({ tool_name: "read_file", tool_input: { filePath: "viking://user/a/x.md" } }) },
+    { script: "scripts/auto-recall.mjs", input: '{"prompt":"hi","session_id":"s"}' },
+  ];
+  // Dead-loopback OV endpoint: creds resolve without touching the real
+  // ovcli.conf, and the (instantly refused) fetch lands in the degrade path.
+  const env = Object.fromEntries(Object.entries(process.env)
+    .filter(([key]) => key !== "PLUGIN_ROOT" && key !== "OPENVIKING_URL" && key !== "OPENVIKING_API_KEY" && key !== "OPENVIKING_CLI_CONFIG_FILE"));
+  env.OPENVIKING_URL = "http://127.0.0.1:9";
+  env.OPENVIKING_API_KEY = "k";
+  for (let round = 0; round < 4; round++) {
+    for (const { script, input } of runs) {
+      const r = spawnSync(process.execPath, [join(PLUGIN_ROOT, script)], { input, encoding: "utf8", env, timeout: 30000 });
+      assert.equal(r.status, 0, `${script} round ${round} exited ${r.status}: ${r.stderr}`);
+    }
+  }
+});
+
 test("hook command bootstrap resolves hook-runner via env, cwd, then install-path fallback", () => {
   const hooks = JSON.parse(readFileSync(join(PLUGIN_ROOT, "com.github.copilot", "hooks", "hooks.json"), "utf8")).hooks;
   const cmd = hooks.SessionStart[0].command;
-  const baseDir = join(os.tmpdir(), `ov-bootstrap-${process.pid}-${Date.now()}`);
+  // realpathSync.native expands Windows 8.3 short names (WANGLI~1) — the
+  // child's process.cwd() reports the long form, so expected paths must be
+  // built from the long form too or startsWith/equals compare fails.
+  const rawBase = join(os.tmpdir(), `ov-bootstrap-${process.pid}-${Date.now()}`);
+  mkdirSync(rawBase, { recursive: true });
+  const baseDir = realpathSync.native(rawBase);
   const mark = join(baseDir, "mark");
   const hookStub = `
 import { writeFileSync } from "node:fs";
@@ -569,12 +600,15 @@ process.stdin.on("end", () => {
   const homeVars = (home) => ({ HOME: home, USERPROFILE: home });
 
   // Run the exact command string through a real shell: PowerShell on Windows
-  // (the shell that motivated the no-$ design), bash elsewhere.
+  // (the shell that motivated the no-$ design), bash elsewhere. PS 5.1's
+  // -Command does NOT propagate the last native command's exit code (an exit
+  // 42 becomes powershell.exe's own exit 1), so append "exit $LASTEXITCODE"
+  // to make the child's code observable.
   const shell = process.platform === "win32"
-    ? { file: "powershell", args: ["-NoProfile", "-Command"] }
-    : { file: "bash", args: ["-c"] };
+    ? { file: "powershell", args: ["-NoProfile", "-Command", `${cmd}; exit $LASTEXITCODE`] }
+    : { file: "bash", args: ["-c", cmd] };
   const runIn = ({ cwd, env }) =>
-    spawnSync(shell.file, [...shell.args, cmd], { cwd, env, input: '{"event":"SessionStart"}', encoding: "utf8" });
+    spawnSync(shell.file, shell.args, { cwd, env, input: '{"event":"SessionStart"}', encoding: "utf8" });
 
   // 1. env PLUGIN_ROOT wins even from a foreign cwd with a fallback present.
   rmSync(mark, { force: true });
@@ -689,7 +723,10 @@ test("uploader dry-run reads VS Code transcript files end to end (queue + --tran
     const cliDir = join(baseDir, "s-cli");
     mkdirSync(cliDir, { recursive: true });
     writeFileSync(join(cliDir, "events.jsonl"), `${JSON.stringify({ type: "user.message", data: { content: "cli turn" } })}\n`);
-    r = spawnSync(process.execPath, [join(PLUGIN_ROOT, "scripts", "uploader.mjs"), "--session", "s-cli", "--transcript-dir", cliDir, "--dry-run"], { env, encoding: "utf8" });
+    // --cwd keeps gitUserPeerId off the runner's cwd: with a UNC process cwd
+    // (WSL share) git.exe stalls for tens of seconds, masking the actual
+    // subject of this check (path resolution).
+    r = spawnSync(process.execPath, [join(PLUGIN_ROOT, "scripts", "uploader.mjs"), "--session", "s-cli", "--transcript-dir", cliDir, "--cwd", cliDir, "--dry-run"], { env, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /session s-cli: 1 events -> 1 turns/);
     // Importing the module must not execute main() (guard) — safe to import.

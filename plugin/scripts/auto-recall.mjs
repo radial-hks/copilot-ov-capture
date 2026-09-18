@@ -111,12 +111,14 @@ async function main() {
   const chunks = [];
   for await (const chunk of process.stdin) chunks.push(chunk);
   let ev = {};
-  try { ev = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { process.exit(0); }
+  // process.exit() right after an async process.stdout.write() crashes node on
+  // Windows (libuv uv_async assert, 0xC0000409). Returning lets the loop drain
+  // so the write flushes before node exits 0.
+  try { ev = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { return; }
   const out = await runRecall(ev);
   process.stdout.write(JSON.stringify(out) + "\n");
-  process.exit(0);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolvePath(process.argv[1])) {
-  main();
+  main().catch(() => {}); // a hook must never crash or block the prompt
 }

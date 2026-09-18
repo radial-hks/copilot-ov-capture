@@ -79,9 +79,11 @@ function assistantPeerId(model) {
 
 function gitUserPeerId(cwd) {
   try {
-    const email = execSync("git config user.email", { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    // 5s cap: git.exe over a network/UNC cwd can stall for tens of seconds;
+    // the peer id is an optional nicety, never worth delaying the pipeline.
+    const email = execSync("git config user.email", { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5000 }).trim();
     if (email) return safePeerId(email);
-  } catch { /* not a repo / no git identity */ }
+  } catch { /* not a repo / no git identity / git stalled */ }
   return "copilot-local-user";
 }
 
@@ -418,7 +420,7 @@ async function main() {
     const cIdx = args.indexOf("--cwd");
     const cwd = cIdx >= 0 ? args[cIdx + 1] : null;
     const file = /\.jsonl$/i.test(dir) ? dir : join(dir, "events.jsonl");
-    if (!existsSync(file)) { log(`session ${sessionId}: transcript missing (${file})`); process.exit(0); }
+    if (!existsSync(file)) { log(`session ${sessionId}: transcript missing (${file})`); return; }
     await uploadSession(cfg, sessionId, file, cwd, { dryRun });
     return;
   }
@@ -426,5 +428,5 @@ async function main() {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolvePath(process.argv[1])) {
-  main().catch(e => { log(`FATAL: ${e.message}`); console.error(e.message); process.exit(1); });
+  main().catch(e => { log(`FATAL: ${e.message}`); console.error(e.message); process.exitCode = 1; });
 }

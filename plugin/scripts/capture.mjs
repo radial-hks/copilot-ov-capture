@@ -59,11 +59,13 @@ async function readStdin() {
 async function main() {
   const rawInput = await readStdin();
   let ev = {};
-  try { ev = JSON.parse(rawInput); } catch { process.exit(0); }
+  // process.exit() while the detached uploader spawn's handles are still
+  // closing crashes node on Windows (libuv uv_async assert, 0xC0000409).
+  // Returning lets the loop drain so node exits 0 cleanly.
+  try { ev = JSON.parse(rawInput); } catch { return; }
   if (queueCaptureEvent(ev, { rawInput })) startUploader();
-  process.exit(0);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolvePath(process.argv[1])) {
-  main();
+  main().catch(() => {}); // a hook must never crash or block the session
 }
