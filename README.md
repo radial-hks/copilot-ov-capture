@@ -36,10 +36,11 @@ OpenViking 记忆平台 × GitHub Copilot（VS Code + Copilot CLI）集成插件
 
 - VS Code ≥ 1.102（Agent plugins + hooks 支持）；Copilot 插件策略未被组织禁用
 - Node ≥ 18（stdio 代理与上传器共用）
-- Windows（install.ps1 / capture.ps1 为 PowerShell）；Linux/macOS 走市场安装路径可用（hooks 需自行适配 shell 命令）
+- Windows / Linux / macOS：插件 hook 使用 Node + 正斜杠路径，Stop/PreCompact 捕获不依赖 PowerShell；`install.ps1` 仅作为 Windows 便捷安装器保留
 
 ## 版本
 
+- 0.4.2 — 跨平台 hook 适配：五个 hook 命令统一使用 Node + `${PLUGIN_ROOT}/...` 路径；Stop/PreCompact 改为 `capture.mjs` 入队并分离启动 uploader，Windows/Linux/macOS 均可运行自动召回、开场注入、URI 防护与自动捕获
 - 0.4.1 — 自动召回保守化：查询截短 400 字符 + `query_expansion`/`rewrite` 显式关闭（实测团队服务器的 expansion/rerank 在长查询下超 15s；session_id 去重收益不受影响，检索路径仍有间歇性 12s+ 抖动，hook 静默降级兜底）
 - 0.4.0 — 能力面补全：本地技能工具（add/update/validate_skill + `path` 上传）+ task_status + SessionStart profile 注入 + PreCompact 归档 + uri-guard + 召回带 session_id + ov-doctor 技能接口检查
 - 0.3.0 — auto-recall 注入 + ov-doctor 自诊断 + marketplace 分发

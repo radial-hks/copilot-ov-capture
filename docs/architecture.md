@@ -15,7 +15,8 @@ plugin/                          # Agent Plugins 1.0 包（分发单元）
 │   ├── auto-recall.mjs          # UserPromptSubmit：检索+注入 <openviking-context>（带 session_id）
 │   ├── session-start.mjs        # SessionStart：profile + 可用记忆清单注入
 │   ├── uri-guard.mjs            # PreToolUse：拒绝文件工具误用 viking:// URI
-│   ├── capture.ps1              # Stop/PreCompact hook：入队→分离启动 uploader
+│   ├── capture.mjs              # Stop/PreCompact hook：跨平台入队→分离启动 uploader
+│   ├── capture.ps1              # 旧版 Windows PowerShell hook（保留给历史安装排障）
 │   ├── uploader.mjs             # 游标增量解析 transcript→提取文本→OV 会话 API
 │   ├── ov-doctor.mjs            # 10 项自诊断（含技能 REST 接口检查）
 │   └── lib/
@@ -31,7 +32,7 @@ docs/                            # 文档（安装/使用/排障/本文）
 
 ## 设计要点
 
-- **hook 快 / uploader 慢分离**：hook <1s 只追加队列；上传分离进程（hooks 要求 <5s）
+- **hook 快 / uploader 慢分离**：hook <1s 只追加队列；上传分离进程（hooks 要求 <5s）。插件注册命令只用 Node 与 `${PLUGIN_ROOT}/...` 路径，避免 macOS/Linux shell 把 Windows 反斜杠当成本地文件名、也避免非 Windows 环境缺少 PowerShell
 - **幂等**：字节偏移游标（`state\<session_id>.json`）+ OV 会话 ID `import__copilot__<id>`；重跑/崩溃/双启动不重不漏
 - **提取策略**对齐官方 ingest：user/assistant 文本保留，tool I/O 丢弃，peer_id 取 `copilot/<model>` 与工作区 peer
 - **workspace peer 推导**（官方 ovcli 工作区配置同语义）：`.openviking/config.json` 的 `peer.id` > 归一化 git origin > 仓库根；非 git 目录不发 peer
@@ -51,7 +52,7 @@ docs/                            # 文档（安装/使用/排障/本文）
 |---|---|---|
 | 自动召回 | UserPromptSubmit → additionalContext | 同机制 + 转发 session_id（激活服务端扩写/去重） |
 | profile 注入 | SessionStart（10000 token） | SessionStart（6000 token，vendored 官方 profile-inject） |
-| 自动捕获 | Stop + PreCompact + SessionEnd | Stop + PreCompact（capture.ps1 双事件门） |
+| 自动捕获 | Stop + PreCompact + SessionEnd | Stop + PreCompact（capture.mjs 双事件门） |
 | uri-guard | PreToolUse 拒绝/提示 | 同语义（PreToolUse deny + systemMessage；VS Code 忽略 matcher，脚本内过滤） |
 | 离线队列 | pending 目录 + 重试预算/TTL | queue.jsonl + 下次 Stop 重试（简化实现） |
 | 写 skill | ❌（MCP `write` 可写域不含 `skills/`，与所有 MCP 型 harness 一致） | ✅ 本地工具 add_skill / update_skill / validate_skill 走 REST，支持 `path` 上传本地 SKILL.md（v0.4.0） |
@@ -74,13 +75,13 @@ node <插件目录>\scripts\uploader.mjs --session <会话id> --dry-run
 
 ## 回归验证链（改动后照此走）
 
-1. `node --check` 全部 .mjs；PowerShell PSParser 检查 .ps1
+1. `node --check` 全部 .mjs；历史 PowerShell 脚本可用 PSParser 额外检查
 2. `node plugin/plugin.test.mjs`（规范 7 项）
 3. dry-run 对真实 transcript（auto-recall / uploader 各一次）
 4. 真传 + 服务端 `GET .../context` 比对消息数/顺序/peer_id
 5. 幂等回归：重跑 uploader 应 `no new events`
 6. ov-doctor 全绿
-7. 端到端：模拟 Stop 事件进 capture.ps1 → 队列入队 → 分离 uploader 清空队列
+7. 端到端：模拟 Stop 事件进 capture.mjs → 队列入队 → 分离 uploader 清空队列
 
 ## 管理员操作
 

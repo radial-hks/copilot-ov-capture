@@ -6,7 +6,7 @@
 ## 你需要知道的前提
 
 - 这是一个 GitHub Copilot 插件（Agent Plugins 1.0 格式），提供 OpenViking 团队记忆集成
-- 目标环境：Windows + VS Code（≥1.102）+ Node ≥18；公司 Copilot 无插件策略限制
+- 目标环境：Windows / Linux / macOS + VS Code（≥1.102）+ Node ≥18；公司 Copilot 无插件策略限制
 - 团队 OpenViking 服务器：内网地址，由管理员随 user key 一并私发（流程第 4 步向用户索要）
 - **凭据是敏感信息**：每个成员有私发的 user key 和团队服务器地址（管理员会一并私发）。这两样你都不知道——安装过程中必须停下来向用户索要（见流程第 4 步的暂停点）。绝不要编造、留空占位符或跳过
 
