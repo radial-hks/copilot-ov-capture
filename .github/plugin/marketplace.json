@@ -11,7 +11,7 @@
     {
       "name": "openviking-copilot",
       "description": "OpenViking 长期记忆集成：MCP 检索/沉淀工具 + 技能写入工具（add/update/validate_skill、task_status）+ 开场 profile 注入 + 自动召回 + 会话捕获（Stop/PreCompact）+ viking:// URI 防护 + 自诊断",
-      "version": "0.4.5",
+      "version": "0.4.6",
       "source": "./plugin"
     }
   ]

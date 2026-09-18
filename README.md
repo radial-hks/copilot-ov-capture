@@ -39,10 +39,11 @@ copilot plugin install openviking-copilot@openviking-team
 
 - VS Code ≥ 1.102（Agent plugins + hooks 支持）；Copilot 插件策略未被组织禁用
 - Node ≥ 18（stdio 代理与上传器共用）
-- Windows / Linux / macOS：五个 hook 命令为每个事件提供四种方言（`command`/`bash` 走 `${PLUGIN_ROOT}` 展开；`windows`/`powershell` 走 `$env:PLUGIN_ROOT` + 显式 powershell 前缀），新旧版 Copilot CLI 与 VS Code 均可正确定位 hook-runner；Stop/PreCompact 捕获用 Node 实现，不依赖 PowerShell 脚本
+- Windows / Linux / macOS：五个 hook 命令四方言均为同一条 `node -e` 自定位引导（env `PLUGIN_ROOT` → cwd → CLI 安装路径兜底），不依赖宿主展开 `${PLUGIN_ROOT}` 或注入环境变量，PowerShell/bash/cmd 下均原样执行；Stop/PreCompact 捕获用 Node 实现，不依赖 PowerShell 脚本
 
 ## 版本
 
+- 0.4.6 — 修复 0.4.5 后仍复现的 `Cannot find module 'E:\scripts\hook-runner.mjs'`：`${PLUGIN_ROOT}` 在 PowerShell 是 PS 变量语法而非环境变量引用，宿主选 `command` 键经 PS 执行时无论是否注入 env 都会插值为空；且旧版 CLI 不认 `windows`/`powershell` 方言键。hooks.json 四方言统一改为 `node -e` 运行时自定位引导（env `PLUGIN_ROOT` 候选逐一校验 → cwd → `~/.copilot/installed-plugins/openviking-team/openviking-copilot` 固定路径兜底），命令串不含 `$`/反引号/嵌套双引号，三种 shell 均原样通过；找不到 runner 时静默退出 0（hook 降级不阻塞会话）
 - 0.4.5 — 修复旧版 Copilot CLI 下 hooks 静默失效（`Cannot find module 'D:\scripts\hook-runner.mjs'`）：旧版 CLI 不做 `${PLUGIN_ROOT}` 文本展开、PowerShell 将其作变量插值为空；hooks.json 为每事件提供四方言命令（command/bash 用 `${PLUGIN_ROOT}`，windows/powershell 用 `$env:PLUGIN_ROOT` + 显式 powershell 前缀）；install.ps1 退役（标准安装流程为 CLI 市场 / VS Code 市场）；ov-doctor 新增 Hook 命令路径检查并把插件注册检查扩展到 CLI 安装路径
 - 0.4.4 — 修复 hooks 静默失效：`timeout` 字段改为 Copilot CLI 认可的 `timeoutSec`（未知字段会导致整个 hook 条目被丢弃）；hook 命令改回 `${PLUGIN_ROOT}/scripts/hook-runner.mjs` 绝对路径（CLI 执行插件 hook 时 cwd=插件目录、VS Code 时 cwd=工作区，相对路径无法两者兼容；`${PLUGIN_ROOT}` 由宿主在命令串展开并注入环境变量）
 - 0.4.3 — 官方 VS Code Agent Plugin 安装兼容：hook 命令改走 `./scripts/hook-runner.mjs`，由 runner 自定位插件根并补齐 `PLUGIN_ROOT`，避免 `${PLUGIN_ROOT}` 在 shell 命令中未注入时展开为空导致 `/scripts/*.mjs` 找不到

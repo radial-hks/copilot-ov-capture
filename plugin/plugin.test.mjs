@@ -10,7 +10,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
@@ -45,6 +45,18 @@ const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
 function loadJson(relPath) {
   return JSON.parse(readFileSync(join(PLUGIN_ROOT, relPath), "utf-8"));
+}
+
+// Canonical hook command: a `node -e` bootstrap that locates hook-runner.mjs
+// at runtime — env PLUGIN_ROOT first, then cwd, then the documented CLI install
+// path — so no host has to expand ${PLUGIN_ROOT} (PowerShell reads it as an
+// empty PS variable) or inject the env var. The inline code deliberately
+// contains no `$`, backtick, or `"` outside the wrapper quotes: PowerShell,
+// bash, and cmd all pass it to node verbatim.
+const BOOTSTRAP_JS = "var n=process.argv[1];var c=require('child_process');var fs=require('fs');var p=require('path');var r=['PLUGIN_ROOT','COPILOT_PLUGIN_ROOT','CLAUDE_PLUGIN_ROOT'].map(function(k){return process.env[k]}).filter(Boolean);r.push(process.cwd());r.push(p.join(require('os').homedir(),'.copilot','installed-plugins','openviking-team','openviking-copilot'));for(var i=0;i<r.length;i++){var s=p.resolve(r[i],'scripts','hook-runner.mjs');if(fs.existsSync(s)){process.exit(c.spawnSync(process.execPath,[s,n],{stdio:'inherit'}).status||0)}}process.exit(0)";
+
+function expectedBootstrapCommand(subcommand) {
+  return `node -e "${BOOTSTRAP_JS}" ${subcommand}`;
 }
 
 function schemaSpecVersion(schemaUrl) {
@@ -475,7 +487,7 @@ test("hooks.json wires the full five-event hook face", () => {
     assert.ok(entries.length > 0, `${event} must declare a hook`);
     for (const hook of entries) {
       assert.equal(hook.type, "command", `${event}: type must be command`);
-      assert.equal(hook.command, `node "\${PLUGIN_ROOT}/scripts/hook-runner.mjs" ${expected[event]}`);
+      assert.equal(hook.command, expectedBootstrapCommand(expected[event]), `${event}: command must be the self-locating bootstrap`);
       assert.ok(typeof hook.timeoutSec === "number" && hook.timeoutSec > 0, `${event}: timeoutSec must be a positive number`);
       assert.ok(existsSync(join(PLUGIN_ROOT, "scripts", "hook-runner.mjs")), `${event}: hook runner missing`);
     }
@@ -487,26 +499,23 @@ test("hooks.json carries all four command dialects per event", () => {
   const subcommands = { SessionStart: "session-start", UserPromptSubmit: "auto-recall", PreToolUse: "uri-guard", PreCompact: "capture", Stop: "capture" };
   for (const [event, entries] of Object.entries(hooks)) {
     for (const hook of entries) {
-      const dialects = ["command", "bash", "windows", "powershell"];
-      for (const dialect of dialects) {
+      for (const dialect of ["command", "bash", "windows", "powershell"]) {
         const cmd = hook[dialect];
         assert.equal(typeof cmd, "string", `${event}: ${dialect} command required`);
-        assert.ok(cmd.includes("scripts/hook-runner.mjs"), `${event}: ${dialect} must target hook-runner.mjs`);
+        // All dialects are the same shell-agnostic bootstrap: hosts pick the
+        // key they know, and every key resolves the runner at runtime instead
+        // of trusting the host to expand ${PLUGIN_ROOT} or inject the env var.
+        assert.equal(cmd, hook.command, `${event}: ${dialect} must equal the command bootstrap`);
         assert.ok(cmd.endsWith(` ${subcommands[event]}`), `${event}: ${dialect} must pass the ${subcommands[event]} subcommand`);
-        if (dialect === "command" || dialect === "bash") {
-          // POSIX paths: expanded by VS Code (all OS), by new CLI versions at
-          // load time, or by bash from the injected PLUGIN_ROOT env var.
-          assert.match(cmd, /\$\{PLUGIN_ROOT\}\/scripts\/hook-runner\.mjs/, `${event}: ${dialect} must use \${PLUGIN_ROOT}`);
-          assert.ok(!cmd.includes("\\"), `${event}: ${dialect} must use forward slashes`);
-          assert.ok(!/powershell/i.test(cmd), `${event}: ${dialect} must not require PowerShell`);
-        } else {
-          // Windows dialects must survive old CLI versions that pass the
-          // command to PowerShell WITHOUT expanding ${PLUGIN_ROOT} (the PS
-          // variable syntax silently expands it to empty). $env:PLUGIN_ROOT
-          // reads the injected env var at PS runtime instead.
-          assert.match(cmd, /\$env:PLUGIN_ROOT\/scripts\/hook-runner\.mjs/, `${event}: ${dialect} must use \$env:PLUGIN_ROOT`);
-          assert.match(cmd, /^powershell -NoProfile -Command /, `${event}: ${dialect} must invoke powershell explicitly (host shell may be cmd)`);
-        }
+        // PowerShell interpolates ${PLUGIN_ROOT} as a PS variable (empty on
+        // Windows) and would also expand $env: references; bash interpolates
+        // both ${...} and $name. The bootstrap must carry none of these.
+        assert.ok(!cmd.includes("$"), `${event}: ${dialect} must not contain shell variable syntax`);
+        assert.ok(!cmd.includes("`"), `${event}: ${dialect} must not contain backticks`);
+        assert.equal(cmd.split('"').length, 3, `${event}: ${dialect} must quote the -e script exactly once`);
+        assert.match(cmd, /^node -e /, `${event}: ${dialect} must be a plain node invocation (no shell wrapper needed)`);
+        assert.ok(cmd.includes("scripts','hook-runner.mjs"), `${event}: ${dialect} must target hook-runner.mjs`);
+        assert.ok(cmd.includes("installed-plugins"), `${event}: ${dialect} must fall back to the CLI install path`);
       }
     }
   }
@@ -520,6 +529,63 @@ test("hook runner locates scripts without inherited PLUGIN_ROOT", () => {
     env: Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== "PLUGIN_ROOT")),
   });
   assert.equal(result.status, 0, result.stderr);
+});
+
+test("hook command bootstrap resolves hook-runner via env, cwd, then install-path fallback", () => {
+  const hooks = JSON.parse(readFileSync(join(PLUGIN_ROOT, "com.github.copilot", "hooks", "hooks.json"), "utf8")).hooks;
+  const cmd = hooks.SessionStart[0].command;
+  const baseDir = join(os.tmpdir(), `ov-bootstrap-${process.pid}-${Date.now()}`);
+  const mark = join(baseDir, "mark");
+  const hookStub = `
+import { writeFileSync } from "node:fs";
+let d = ""; process.stdin.on("data", c => d += c);
+process.stdin.on("end", () => {
+  writeFileSync(process.env.MARK, process.argv[1] + "|" + process.argv[2] + "|" + d.trim());
+  process.exit(42);
+});`;
+  const stubAt = (root) => {
+    mkdirSync(join(root, "scripts"), { recursive: true });
+    writeFileSync(join(root, "scripts", "hook-runner.mjs"), hookStub);
+    return join(root, "scripts", "hook-runner.mjs");
+  };
+  const envRoot = join(baseDir, "env-root");
+  const cwdRoot = join(baseDir, "cwd-root");
+  const fakeHome = join(baseDir, "home");
+  const emptyCwd = join(baseDir, "empty");
+  stubAt(envRoot);
+  stubAt(cwdRoot);
+  stubAt(join(fakeHome, ".copilot", "installed-plugins", "openviking-team", "openviking-copilot"));
+  mkdirSync(emptyCwd, { recursive: true });
+  const baseEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== "PLUGIN_ROOT"));
+
+  const runIn = ({ cwd, env }) =>
+    spawnSync("bash", ["-c", cmd], { cwd, env, input: '{"event":"SessionStart"}', encoding: "utf8" });
+
+  // 1. env PLUGIN_ROOT wins even from a foreign cwd with a fallback present.
+  rmSync(mark, { force: true });
+  let r = runIn({ cwd: emptyCwd, env: { ...baseEnv, HOME: fakeHome, MARK: mark, PLUGIN_ROOT: envRoot } });
+  assert.equal(r.status, 42, `env candidate failed: ${r.stderr}`);
+  assert.equal(readFileSync(mark, "utf8"), `${join(envRoot, "scripts", "hook-runner.mjs")}|session-start|{"event":"SessionStart"}`);
+
+  // 2. no env: the CLI runs plugin hooks with cwd = plugin dir.
+  rmSync(mark, { force: true });
+  r = runIn({ cwd: cwdRoot, env: { ...baseEnv, HOME: fakeHome, MARK: mark } });
+  assert.equal(r.status, 42, `cwd candidate failed: ${r.stderr}`);
+  assert.ok(readFileSync(mark, "utf8").startsWith(join(cwdRoot, "scripts", "hook-runner.mjs")));
+
+  // 3. no env, foreign cwd: the documented CLI install path is the last resort
+  //    (~/.copilot/installed-plugins/MARKETPLACE/PLUGIN per the CLI plugin
+  //    reference; os.homedir() follows HOME on POSIX and USERPROFILE on Windows).
+  rmSync(mark, { force: true });
+  r = runIn({ cwd: emptyCwd, env: { ...baseEnv, HOME: fakeHome, MARK: mark } });
+  assert.equal(r.status, 42, `install-path fallback failed: ${r.stderr}`);
+  assert.ok(readFileSync(mark, "utf8").startsWith(join(fakeHome, ".copilot", "installed-plugins", "openviking-team", "openviking-copilot", "scripts", "hook-runner.mjs")));
+
+  // 4. nothing anywhere: silent no-op (hooks degrade, they never crash a session).
+  r = runIn({ cwd: emptyCwd, env: { ...baseEnv, HOME: join(baseDir, "nohome"), MARK: mark } });
+  assert.equal(r.status, 0, `no-match case must exit 0: ${r.stderr}`);
+
+  rmSync(baseDir, { recursive: true, force: true });
 });
 
 test("capture.mjs queues Stop and PreCompact events without PowerShell", async () => {

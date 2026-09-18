@@ -172,7 +172,7 @@ const PLUGIN_ROOT_DIR = dirname(fileURLToPath(import.meta.url)) ? join(dirname(f
     registered ? "" : "按 docs/installation.md 标准流程安装：copilot plugin install openviking-copilot@openviking-team，或 VS Code 市场安装；装完 Reload Window");
 }
 
-// 7. hook wiring: every command dialect must resolve to a real script
+// 7. hook wiring: every command dialect must be the shell-agnostic bootstrap
 {
   const hooksPath = join(PLUGIN_ROOT_DIR, "com.github.copilot", "hooks", "hooks.json");
   let ok = false;
@@ -188,10 +188,18 @@ const PLUGIN_ROOT_DIR = dirname(fileURLToPath(import.meta.url)) ? join(dirname(f
         for (const d of dialects) {
           const cmd = hook[d];
           if (typeof cmd !== "string") continue;
-          const m = /\$\{PLUGIN_ROOT\}|\$env:PLUGIN_ROOT/.exec(cmd);
-          if (!m) { ok = false; detail = `${d} 命令缺少 PLUGIN_ROOT 引用`; checked = -1; break; }
-          const script = "scripts/hook-runner.mjs";
-          if (!cmd.includes(script)) { ok = false; detail = `${d} 命令未指向 ${script}`; checked = -1; break; }
+          if (!cmd.startsWith("node -e ")) {
+            ok = false; detail = `${d} 命令不是 node -e 自定位引导（疑似旧版 hooks.json）`; checked = -1; break;
+          }
+          if (cmd.includes("$")) {
+            ok = false; detail = `${d} 命令含 shell 变量语法，PowerShell/bash 会把 \${PLUGIN_ROOT} 插值为空（0.4.5 及更早的根因）`; checked = -1; break;
+          }
+          if (!cmd.includes("'scripts','hook-runner.mjs'")) {
+            ok = false; detail = `${d} 命令未在运行时解析 scripts/hook-runner.mjs`; checked = -1; break;
+          }
+          if (!cmd.includes("installed-plugins")) {
+            ok = false; detail = `${d} 命令缺少 CLI 安装路径兜底`; checked = -1; break;
+          }
           checked++;
         }
         if (checked < 0) break;
@@ -201,14 +209,14 @@ const PLUGIN_ROOT_DIR = dirname(fileURLToPath(import.meta.url)) ? join(dirname(f
     if (checked > 0) {
       ok = existsSync(join(PLUGIN_ROOT_DIR, "scripts", "hook-runner.mjs"));
       detail = ok
-        ? `四方言命令均指向 scripts/hook-runner.mjs（command/windows/powershell/bash 共 ${checked} 处）`
+        ? `四方言命令均为 node -e 自定位引导（env PLUGIN_ROOT → cwd → CLI 安装路径，共 ${checked} 处）`
         : `scripts/hook-runner.mjs 不存在于 ${PLUGIN_ROOT_DIR}`;
     }
   } catch (e) {
     detail = `hooks.json 解析失败: ${e.message}`;
   }
   check("Hook 命令路径", ok, detail,
-    "hooks.json 损坏或被改写——重新安装插件：copilot plugin install openviking-copilot@openviking-team（CLI 有缓存陷阱，重装才会覆盖）");
+    "hooks.json 损坏、被改写或安装了 ≤0.4.5 旧版——重新安装插件：copilot plugin install openviking-copilot@openviking-team（CLI 有缓存陷阱，重装才会覆盖）");
 }
 
 // report
