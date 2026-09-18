@@ -6,7 +6,7 @@
       "command": "node",
       "args": [
         "-e",
-        "var n=process.argv[1];var c=require('child_process');var fs=require('fs');var p=require('path');var r=['PLUGIN_ROOT','COPILOT_PLUGIN_ROOT','CLAUDE_PLUGIN_ROOT'].map(function(k){return process.env[k]}).filter(Boolean);r.push(process.cwd());r.push(p.join(require('os').homedir(),'.copilot','installed-plugins','openviking-team','openviking-copilot'));for(var i=0;i<r.length;i++){var s=p.resolve(r[i],n);if(fs.existsSync(s)){var t=c.spawnSync(process.execPath,[s],{stdio:'inherit'}).status;process.exit(t==null?1:t)}}console.error('openviking-copilot: MCP entry not found under any plugin root candidate: '+n);process.exit(1)",
+        "var n=process.argv[1];var c=require('child_process');var fs=require('fs');var p=require('path');var r=['PLUGIN_ROOT','COPILOT_PLUGIN_ROOT','CLAUDE_PLUGIN_ROOT'].map(function(k){return process.env[k]}).filter(Boolean);r.push(process.cwd());try{var ip=p.join(require('os').homedir(),'.copilot','installed-plugins');fs.readdirSync(ip).forEach(function(m){try{fs.readdirSync(p.join(ip,m)).forEach(function(pl){var d=p.join(ip,m,pl);if(fs.existsSync(p.join(d,'scripts','hook-runner.mjs')))r.push(d)})}catch(e){}})}catch(e){}for(var i=0;i<r.length;i++){var s=p.resolve(r[i],n);if(fs.existsSync(s)){var t=c.spawnSync(process.execPath,[s],{stdio:'inherit'}).status;process.exit(t==null?1:t)}}console.error('openviking-copilot: MCP entry not found under any plugin root candidate: '+n);process.exit(1)",
         "local-tools/mcp-entry.mjs"
       ]
     }

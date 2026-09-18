@@ -169,7 +169,7 @@ const PLUGIN_ROOT_DIR = dirname(fileURLToPath(import.meta.url)) ? join(dirname(f
     }
   }
   check("插件注册", registered, detail || "未找到任何安装痕迹（CLI/VS Code 市场/pluginLocations 均无）",
-    registered ? "" : "按 docs/installation.md 标准流程安装：copilot plugin install openviking-copilot@openviking-team，或 VS Code 市场安装；装完 Reload Window");
+    registered ? "" : "按 docs/installation.md 标准流程安装（CLI 市场或 VS Code 市场，marketplace 名以文档为准）；装完 Reload Window");
 }
 
 // 7. hook wiring: every command dialect must be the shell-agnostic bootstrap
@@ -209,14 +209,14 @@ const PLUGIN_ROOT_DIR = dirname(fileURLToPath(import.meta.url)) ? join(dirname(f
     if (checked > 0) {
       ok = existsSync(join(PLUGIN_ROOT_DIR, "scripts", "hook-runner.mjs"));
       detail = ok
-        ? `四方言命令均为 node -e 自定位引导（env PLUGIN_ROOT → cwd → CLI 安装路径，共 ${checked} 处）`
+        ? `四方言命令均为 node -e 自定位引导（env PLUGIN_ROOT → cwd → installed-plugins 通用扫描，共 ${checked} 处）`
         : `scripts/hook-runner.mjs 不存在于 ${PLUGIN_ROOT_DIR}`;
     }
   } catch (e) {
     detail = `hooks.json 解析失败: ${e.message}`;
   }
   check("Hook 命令路径", ok, detail,
-    "hooks.json 损坏、被改写或安装了 ≤0.4.5 旧版——重新安装插件：copilot plugin install openviking-copilot@openviking-team（CLI 有缓存陷阱，重装才会覆盖）");
+    "hooks.json 损坏、被改写或安装了 ≤0.4.5 旧版——重新安装插件（见 docs/installation.md；CLI 有缓存陷阱，重装才会覆盖）");
 }
 
 // report

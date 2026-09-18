@@ -58,7 +58,7 @@ function loadJson(relPath) {
 // empty PS variable) or inject the env var. The inline code deliberately
 // contains no `$`, backtick, or `"` outside the wrapper quotes: PowerShell,
 // bash, and cmd all pass it to node verbatim.
-const BOOTSTRAP_JS = "var n=process.argv[1];var c=require('child_process');var fs=require('fs');var p=require('path');var r=['PLUGIN_ROOT','COPILOT_PLUGIN_ROOT','CLAUDE_PLUGIN_ROOT'].map(function(k){return process.env[k]}).filter(Boolean);r.push(process.cwd());r.push(p.join(require('os').homedir(),'.copilot','installed-plugins','openviking-team','openviking-copilot'));for(var i=0;i<r.length;i++){var s=p.resolve(r[i],'scripts','hook-runner.mjs');if(fs.existsSync(s)){process.exit(c.spawnSync(process.execPath,[s,n],{stdio:'inherit'}).status||0)}}process.exit(0)";
+const BOOTSTRAP_JS = "var n=process.argv[1];var c=require('child_process');var fs=require('fs');var p=require('path');var r=['PLUGIN_ROOT','COPILOT_PLUGIN_ROOT','CLAUDE_PLUGIN_ROOT'].map(function(k){return process.env[k]}).filter(Boolean);r.push(process.cwd());try{var ip=p.join(require('os').homedir(),'.copilot','installed-plugins');fs.readdirSync(ip).forEach(function(m){try{fs.readdirSync(p.join(ip,m)).forEach(function(pl){var d=p.join(ip,m,pl);if(fs.existsSync(p.join(d,'scripts','hook-runner.mjs')))r.push(d)})}catch(e){}})}catch(e){}for(var i=0;i<r.length;i++){var s=p.resolve(r[i],'scripts','hook-runner.mjs');if(fs.existsSync(s)){process.exit(c.spawnSync(process.execPath,[s,n],{stdio:'inherit'}).status||0)}}process.exit(0)";
 
 // Same self-locating bootstrap, but for the stdio MCP entry: VS Code's
 // agent-plugins host does not expand ${PLUGIN_ROOT} in mcp.json args (it
@@ -69,7 +69,7 @@ const BOOTSTRAP_JS = "var n=process.argv[1];var c=require('child_process');var f
 // Unlike the hook bootstrap it exits 1 with a stderr hint on miss: an MCP
 // server has no session to degrade around, and a silent exit 0 cost a full
 // debugging round-trip once already.
-const MCP_BOOTSTRAP_JS = "var n=process.argv[1];var c=require('child_process');var fs=require('fs');var p=require('path');var r=['PLUGIN_ROOT','COPILOT_PLUGIN_ROOT','CLAUDE_PLUGIN_ROOT'].map(function(k){return process.env[k]}).filter(Boolean);r.push(process.cwd());r.push(p.join(require('os').homedir(),'.copilot','installed-plugins','openviking-team','openviking-copilot'));for(var i=0;i<r.length;i++){var s=p.resolve(r[i],n);if(fs.existsSync(s)){var t=c.spawnSync(process.execPath,[s],{stdio:'inherit'}).status;process.exit(t==null?1:t)}}console.error('openviking-copilot: MCP entry not found under any plugin root candidate: '+n);process.exit(1)";
+const MCP_BOOTSTRAP_JS = "var n=process.argv[1];var c=require('child_process');var fs=require('fs');var p=require('path');var r=['PLUGIN_ROOT','COPILOT_PLUGIN_ROOT','CLAUDE_PLUGIN_ROOT'].map(function(k){return process.env[k]}).filter(Boolean);r.push(process.cwd());try{var ip=p.join(require('os').homedir(),'.copilot','installed-plugins');fs.readdirSync(ip).forEach(function(m){try{fs.readdirSync(p.join(ip,m)).forEach(function(pl){var d=p.join(ip,m,pl);if(fs.existsSync(p.join(d,'scripts','hook-runner.mjs')))r.push(d)})}catch(e){}})}catch(e){}for(var i=0;i<r.length;i++){var s=p.resolve(r[i],n);if(fs.existsSync(s)){var t=c.spawnSync(process.execPath,[s],{stdio:'inherit'}).status;process.exit(t==null?1:t)}}console.error('openviking-copilot: MCP entry not found under any plugin root candidate: '+n);process.exit(1)";
 
 function expectedBootstrapCommand(subcommand) {
   return `node -e "${BOOTSTRAP_JS}" ${subcommand}`;
@@ -654,7 +654,7 @@ process.stdin.on("end", () => {
   const emptyCwd = join(baseDir, "empty");
   stubAt(envRoot);
   stubAt(cwdRoot);
-  stubAt(join(fakeHome, ".copilot", "installed-plugins", "openviking-team", "openviking-copilot"));
+  stubAt(join(fakeHome, ".copilot", "installed-plugins", "any-market", "openviking-copilot"));
   mkdirSync(emptyCwd, { recursive: true });
   const baseEnv = Object.fromEntries(Object.entries(process.env)
     .filter(([key]) => key !== "PLUGIN_ROOT" && key !== "HOME" && key !== "USERPROFILE"));
@@ -686,13 +686,14 @@ process.stdin.on("end", () => {
   assert.equal(r.status, 42, `cwd candidate failed: ${r.stderr}`);
   assert.ok(readFileSync(mark, "utf8").startsWith(join(cwdRoot, "scripts", "hook-runner.mjs")));
 
-  // 3. no env, foreign cwd: the documented CLI install path is the last resort
-  //    (~/.copilot/installed-plugins/MARKETPLACE/PLUGIN per the CLI plugin
-  //    reference).
+  // 3. no env, foreign cwd: a generic scan of
+  //    ~/.copilot/installed-plugins/*/*/ (any marketplace name) is the last
+  //    resort, matching the CLI install layout documented in the plugin
+  //    reference.
   rmSync(mark, { force: true });
   r = runIn({ cwd: emptyCwd, env: { ...baseEnv, ...homeVars(fakeHome), MARK: mark } });
   assert.equal(r.status, 42, `install-path fallback failed: ${r.stderr}`);
-  assert.ok(readFileSync(mark, "utf8").startsWith(join(fakeHome, ".copilot", "installed-plugins", "openviking-team", "openviking-copilot", "scripts", "hook-runner.mjs")));
+  assert.ok(readFileSync(mark, "utf8").startsWith(join(fakeHome, ".copilot", "installed-plugins", "any-market", "openviking-copilot", "scripts", "hook-runner.mjs")));
 
   // 4. nothing anywhere: silent no-op (hooks degrade, they never crash a session).
   r = runIn({ cwd: emptyCwd, env: { ...baseEnv, ...homeVars(join(baseDir, "nohome")), MARK: mark } });
