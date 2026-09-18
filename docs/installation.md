@@ -4,9 +4,43 @@
 
 前置：团队 OpenViking 服务（内网），由团队管理员为每人签发 user key（私发，一串 token）。
 
-## 三条安装路径，按推荐顺序
+## 安装路径，按推荐顺序
 
-### 路径 1：VS Code 插件市场注册（推荐，一次配置自动升级）
+### 路径 1：Copilot CLI 市场安装（推荐，核心路径）
+
+团队后续核心安装方式对齐官方 marketplace 体验：如果团队环境已经预注册 `openviking-team` 市场，直接安装插件即可。
+
+```bash
+copilot plugin install openviking-copilot@openviking-team
+```
+
+如果 Copilot CLI 版本较旧，或当前机器尚未注册内部市场并提示 marketplace unknown，先注册一次，再安装：
+
+```bash
+copilot plugin marketplace add radial-hks/copilot-ov-capture
+copilot plugin install openviking-copilot@openviking-team
+```
+
+验证加载：
+
+```bash
+copilot plugin list
+```
+
+> **缓存陷阱（官方文档明示）**：CLI 安装后从缓存读取，改动插件源目录后必须**重新执行 install** 才生效。升级流程 = 新版本发布后重跑 `copilot plugin install openviking-copilot@openviking-team`。
+>
+> CLI 装的插件（`~/.copilot/installed-plugins/`）VS Code 会**自动发现**，两边共用——无需重复安装。
+
+**装完插件本体后，还差凭据**（MCP/捕获上传器需要）：
+
+```powershell
+# 手工创建 %USERPROFILE%\.openviking\ovcli.conf，内容：
+{ "url": "<your-openviking-server-url>", "api_key": "<你的user-key>" }
+```
+
+或跑一次 install.ps1 只为写凭据（`-ApiKey` 参数）。
+
+### 路径 2：VS Code 图形安装（补充路径）
 
 VS Code 原生支持仓库市场——settings.json 加一行，之后全程图形界面：
 
@@ -30,23 +64,6 @@ VS Code 原生支持仓库市场——settings.json 加一行，之后全程图�
 ```
 
 或跑一次 install.ps1 只为写凭据（`-ApiKey` 参数）。
-
-### 路径 2：Copilot CLI 市场安装（终端用户 / 需要精确控制版本时）
-
-本仓库自身就是一个插件市场（`.github/plugin/marketplace.json`）：
-
-```bash
-# 1. 注册市场（一行）
-copilot plugin marketplace add radial-hks/copilot-ov-capture
-# 2. 安装插件（一行；已装过时此命令即升级）
-copilot plugin install openviking-copilot@openviking-team
-# 3. 验证加载
-copilot plugin list
-```
-
-> **缓存陷阱（官方文档明示）**：CLI 安装后从缓存读取，改动插件源目录后必须**重新执行 install** 才生效。升级流程 = `git pull` 后重跑第 2 步。
->
-> CLI 装的插件（`~/.copilot/installed-plugins/`）VS Code 会**自动发现**，两边共用——无需重复安装。
 
 ### 路径 3：install.ps1（Windows 全自动一键装，适合不想碰 settings.json 的组员）
 
@@ -97,9 +114,9 @@ node ~/.openviking/copilot-ov-plugin/scripts/ov-doctor.mjs
 
 ```powershell
 cd <仓库目录> && git pull
-# 路径 1 用户：界面自动检查（24h 周期）；手动触发用 Ctrl+Shift+P → Extensions: Check for Extension Updates，有新版点 Update
-# 路径 2 用户：重装即升级（缓存陷阱——不重装不生效）
+# 路径 1 用户：重装即升级（缓存陷阱——不重装不生效）
 copilot plugin install openviking-copilot@openviking-team
+# 路径 2 用户：界面自动检查（24h 周期）；手动触发用 Ctrl+Shift+P → Extensions: Check for Extension Updates，有新版点 Update
 # 路径 3 用户：重新运行 install.ps1（会覆盖插件目录，凭据与 settings 合并保留）
 powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -ApiKey <你的user-key> -ServerUrl <你的-openviking-server-url>
 ```

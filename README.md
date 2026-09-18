@@ -13,13 +13,16 @@ OpenViking 记忆平台 × GitHub Copilot（VS Code + Copilot CLI）集成插件
 
 ## 快速开始（组员）
 
-```jsonc
-// VS Code 用户级 settings.json 加一行（仓库市场原生支持，私有仓库亦可）
-"chat.plugins.marketplaces": ["radial-hks/copilot-ov-capture"]
-// 然后 Extensions 面板搜 @agentPlugins → Install openviking-copilot
+```bash
+# 如果团队环境已预注册 openviking-team 市场，只需这一行
+copilot plugin install openviking-copilot@openviking-team
+
+# 如果提示 marketplace unknown，先注册一次再安装
+copilot plugin marketplace add radial-hks/copilot-ov-capture
+copilot plugin install openviking-copilot@openviking-team
 ```
 
-凭据（一次性）：手工创建 `%USERPROFILE%\.openviking\ovcli.conf`（`url` + `api_key`），或跑 install.ps1 代写。详见 [docs/installation.md](docs/installation.md)（三条路径）。
+凭据（一次性）：手工创建 `%USERPROFILE%\.openviking\ovcli.conf`（`url` + `api_key`），或跑 install.ps1 代写。详见 [docs/installation.md](docs/installation.md)（CLI 市场为核心路径，VS Code 图形安装和本地安装为补充路径）。
 
 装完自检：`node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\ov-doctor.mjs`
 
@@ -27,7 +30,7 @@ OpenViking 记忆平台 × GitHub Copilot（VS Code + Copilot CLI）集成插件
 
 | 文档 | 内容 | 读者 |
 |---|---|---|
-| [docs/installation.md](docs/installation.md) | 三条安装路径（VS Code 市场 / CLI 市场 / install.ps1）、验证清单、升级流程 | 首次安装的组员 |
+| [docs/installation.md](docs/installation.md) | 安装路径（Copilot CLI 市场 / VS Code 图形安装 / install.ps1）、验证清单、升级流程 | 首次安装的组员 |
 | [docs/usage.md](docs/usage.md) | 自动召回/自动捕获日常使用、workspace peer、隐私边界 | 全体使用者 |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 症状→处理速查表 | 全体使用者 |
 | [docs/architecture.md](docs/architecture.md) | 架构、官方插件对照、回归链、管理员操作（开 key / 发版） | 维护者 |

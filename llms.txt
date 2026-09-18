@@ -10,7 +10,7 @@
 - 团队 OpenViking 服务器：内网地址，由管理员随 user key 一并私发（流程第 4 步向用户索要）
 - **凭据是敏感信息**：每个成员有私发的 user key 和团队服务器地址（管理员会一并私发）。这两样你都不知道——安装过程中必须停下来向用户索要（见流程第 4 步的暂停点）。绝不要编造、留空占位符或跳过
 
-## 安装流程（对 Windows 用户，推荐路径 1）
+## 安装流程（推荐：Copilot CLI 市场安装）
 
 ### 第 1 步：检查环境
 
@@ -21,26 +21,38 @@ code --version   # 需要 ≥ 1.102
 
 任一不满足 → 告诉用户缺什么，停止。
 
-### 第 2 步：写 VS Code 用户级 settings.json
+### 第 2 步：用 Copilot CLI 安装插件本体
 
-定位文件：运行中的 VS Code 可能有自定义 user-data-dir（查 `Get-CimInstance Win32_Process -Filter "name='Code.exe'"` 的命令行里是否有 `--user-data-dir`）；默认是 `%APPDATA%\Code\User\settings.json`。
+如果团队环境已预注册 `openviking-team` 市场，直接安装：
 
-在 settings.json 中添加（注意与现有内容合并，不要覆盖）：
+```powershell
+copilot plugin install openviking-copilot@openviking-team
+```
+
+如果提示 marketplace unknown，先注册一次内部市场，再安装：
+
+```powershell
+copilot plugin marketplace add radial-hks/copilot-ov-capture
+copilot plugin install openviking-copilot@openviking-team
+```
+
+验证 CLI 已加载：
+
+```powershell
+copilot plugin list
+```
+
+CLI 安装后的插件目录会被 VS Code 自动发现。让用户在 VS Code 执行 `Developer: Reload Window`，使 Copilot 插件重新加载。
+
+### 第 3 步：VS Code 图形安装备选路径
+
+如果用户没有可用的 Copilot CLI，改走 VS Code 图形安装：先在用户级 settings.json 合并这一行（不要覆盖现有设置）：
 
 ```json
 "chat.plugins.marketplaces": ["radial-hks/copilot-ov-capture"]
 ```
 
-若用户不想手动编辑 settings.json，改用备选方案：
-```powershell
-git clone https://github.com/radial-hks/copilot-ov-capture.git <目录>
-powershell -NoProfile -ExecutionPolicy Bypass -File <目录>\install.ps1 -ApiKey <用户key>
-```
-（install.ps1 自动完成拷贝/凭据/settings 合并，幂等可重跑）
-
-### 第 3 步：让用户在 VS Code 图形界面安装插件本体
-
-指导用户操作（这一步无法替他做）：
+然后指导用户操作（这一步无法替他做）：
 1. `Ctrl+Shift+X` 打开 Extensions → 搜索 `@agentPlugins`
 2. 首次会弹市场信任确认 → 确认
 3. 找到 **openviking-copilot** → 点 Install
@@ -70,21 +82,24 @@ node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\ov-doctor.mjs
 
 逐项解读输出（10 项体检，PASS/FAIL 带修复提示）：
 - 有 FAIL → 按 FAIL 项的"修复"提示处理；处理后重跑 doctor
-- `VS Code 插件注册` 项走路径 1 时可能显示未注册（doctor 检查的是 chat.pluginLocations 方式）——若用户走了市场安装且插件已在 @agentPlugins 里显示为 Installed，此 FAIL 可忽略，其他项全绿即成功
+- `VS Code 插件注册` 项走 CLI/市场安装时可能显示未注册（doctor 检查的是 chat.pluginLocations 方式）——若 `copilot plugin list` 或 @agentPlugins 已显示 Installed，此 FAIL 可忽略，其他项全绿即成功
 - 全绿 → 安装完成。告诉用户：新开 Copilot 会话随便问个问题（如"帮我回顾之前做过的类似功能"），之后可以用了
 
 ## 常见问题（详见 docs/troubleshooting.md）
 
 | 症状 | 处理 |
 |---|---|
-| 搜不到 @agentPlugins 或无 openviking-copilot | 确认 settings.json 的 marketplaces 行已保存且 Reload Window 过 |
+| `copilot plugin install` 报 marketplace unknown | 先运行 `copilot plugin marketplace add radial-hks/copilot-ov-capture`，再重试 install |
+| 搜不到 @agentPlugins 或无 openviking-copilot | CLI 用户先看 `copilot plugin list`；图形安装用户确认 settings.json 的 marketplaces 行已保存且 Reload Window 过 |
 | doctor 报 401 / key 无效 | key 抄错或失效 → 让用户和管理员核对，重写 ovcli.conf |
 | doctor 报服务不通 | `curl <your-openviking-server-url>/health`；内网/VPN 问题 |
 | 改了插件不生效 | VS Code：Check for Extension Updates；CLI 装的需重装（缓存陷阱） |
 
 ## 升级
 
-市场安装的用户：VS Code 每 24h 自动检查，界面点 Update 即可；手动触发 `Extensions: Check for Extension Updates`。
+CLI 安装用户：重跑 `copilot plugin install openviking-copilot@openviking-team` 即升级。
+
+VS Code 图形安装用户：VS Code 每 24h 自动检查，界面点 Update 即可；手动触发 `Extensions: Check for Extension Updates`。
 
 ## 边界
 
