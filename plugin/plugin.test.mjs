@@ -15,9 +15,14 @@ import http from "node:http";
 import os from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const PLUGIN_ROOT = dirname(fileURLToPath(import.meta.url));
+
+// Dynamic import() rejects absolute Windows paths ("C:\..." is not a URL:
+// ERR_UNSUPPORTED_ESM_URL_SCHEME). Convert to a file:// URL first — works on
+// every platform.
+const importPluginModule = (...paths) => import(pathToFileURL(join(PLUGIN_ROOT, ...paths)).href);
 
 const SPEC_VERSION = "1.0.0";
 const PLUGIN_SCHEMA_URL = `https://agent-plugins.org/schemas/${SPEC_VERSION}/plugin.schema.json`;
@@ -257,7 +262,7 @@ test("mcp.json points at the local-tools entry so skill tools are exposed", () =
 });
 
 test("skill tool provider lists add/update/validate/task_status with flat schemas", async () => {
-  const { createSkillToolProvider } = await import(join(PLUGIN_ROOT, "local-tools", "skill-tools.mjs"));
+  const { createSkillToolProvider } = await importPluginModule("local-tools", "skill-tools.mjs");
   const provider = createSkillToolProvider({ fetchImpl: async () => { throw new Error("must not fetch"); } });
   const tools = provider.listTools();
   assert.deepEqual(tools.map((t) => t.name), ["add_skill", "update_skill", "validate_skill", "task_status"]);
@@ -278,7 +283,7 @@ test("skill tool provider lists add/update/validate/task_status with flat schema
 
 test("skill tool provider: add_skill posts to the REST endpoint with auth headers", async () => {
   const calls = [];
-  const { createSkillToolProvider } = await import(join(PLUGIN_ROOT, "local-tools", "skill-tools.mjs"));
+  const { createSkillToolProvider } = await importPluginModule("local-tools", "skill-tools.mjs");
   const provider = createSkillToolProvider({
     fetchImpl: async (url, init) => {
       calls.push({ url, init });
@@ -315,7 +320,7 @@ test("skill tool provider: add_skill posts to the REST endpoint with auth header
 
 test("skill tool provider: update_skill PUTs to /skills/{name} and surfaces errors as isError", async () => {
   const calls = [];
-  const { createSkillToolProvider } = await import(join(PLUGIN_ROOT, "local-tools", "skill-tools.mjs"));
+  const { createSkillToolProvider } = await importPluginModule("local-tools", "skill-tools.mjs");
   const provider = createSkillToolProvider({
     fetchImpl: async (url, init) => {
       calls.push({ url, init });
@@ -339,7 +344,7 @@ test("skill tool provider: update_skill PUTs to /skills/{name} and surfaces erro
 });
 
 test("skill tool provider: missing required args and from_source guard return isError", async () => {
-  const { createSkillToolProvider } = await import(join(PLUGIN_ROOT, "local-tools", "skill-tools.mjs"));
+  const { createSkillToolProvider } = await importPluginModule("local-tools", "skill-tools.mjs");
   const provider = createSkillToolProvider({
     fetchImpl: async () => { throw new Error("must not fetch"); },
   });
@@ -367,7 +372,7 @@ test("skill tool provider: missing required args and from_source guard return is
 
 test("skill tool provider: task_status GETs the Task API endpoint", async () => {
   const calls = [];
-  const { createSkillToolProvider } = await import(join(PLUGIN_ROOT, "local-tools", "skill-tools.mjs"));
+  const { createSkillToolProvider } = await importPluginModule("local-tools", "skill-tools.mjs");
   const provider = createSkillToolProvider({
     fetchImpl: async (url, init) => {
       calls.push({ url, init });
@@ -396,7 +401,7 @@ test("skill tool provider: add_skill `path` uploads the local file via temp_uplo
   writeFileSync(tmpSkill, "---\nname: path-skill\ndescription: uploaded via path\n---\n\n# path-skill\n");
   try {
     const calls = [];
-    const { createSkillToolProvider } = await import(join(PLUGIN_ROOT, "local-tools", "skill-tools.mjs"));
+    const { createSkillToolProvider } = await importPluginModule("local-tools", "skill-tools.mjs");
     const provider = createSkillToolProvider({
       fetchImpl: async (url, init) => {
         calls.push({ url, init });
@@ -443,7 +448,7 @@ test("skill tool provider: add_skill `path` uploads the local file via temp_uplo
 });
 
 test("uri-guard: denies file tools with viking:// paths, hints on terminal, passes MCP tools", async () => {
-  const { decideUriGuard } = await import(join(PLUGIN_ROOT, "scripts", "uri-guard.mjs"));
+  const { decideUriGuard } = await importPluginModule("scripts", "uri-guard.mjs");
 
   // File tool with a viking:// path -> deny with MCP redirection.
   const denied = decideUriGuard({ tool_name: "read_file", tool_input: { filePath: "viking://user/alice/memories/pr.md" } });
@@ -556,40 +561,50 @@ process.stdin.on("end", () => {
   stubAt(cwdRoot);
   stubAt(join(fakeHome, ".copilot", "installed-plugins", "openviking-team", "openviking-copilot"));
   mkdirSync(emptyCwd, { recursive: true });
-  const baseEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== "PLUGIN_ROOT"));
+  const baseEnv = Object.fromEntries(Object.entries(process.env)
+    .filter(([key]) => key !== "PLUGIN_ROOT" && key !== "HOME" && key !== "USERPROFILE"));
+  // os.homedir() reads HOME on POSIX and USERPROFILE on Windows — set both so
+  // every scenario stays hermetic (no leaking into the real user profile) on
+  // either platform.
+  const homeVars = (home) => ({ HOME: home, USERPROFILE: home });
 
+  // Run the exact command string through a real shell: PowerShell on Windows
+  // (the shell that motivated the no-$ design), bash elsewhere.
+  const shell = process.platform === "win32"
+    ? { file: "powershell", args: ["-NoProfile", "-Command"] }
+    : { file: "bash", args: ["-c"] };
   const runIn = ({ cwd, env }) =>
-    spawnSync("bash", ["-c", cmd], { cwd, env, input: '{"event":"SessionStart"}', encoding: "utf8" });
+    spawnSync(shell.file, [...shell.args, cmd], { cwd, env, input: '{"event":"SessionStart"}', encoding: "utf8" });
 
   // 1. env PLUGIN_ROOT wins even from a foreign cwd with a fallback present.
   rmSync(mark, { force: true });
-  let r = runIn({ cwd: emptyCwd, env: { ...baseEnv, HOME: fakeHome, MARK: mark, PLUGIN_ROOT: envRoot } });
+  let r = runIn({ cwd: emptyCwd, env: { ...baseEnv, ...homeVars(fakeHome), MARK: mark, PLUGIN_ROOT: envRoot } });
   assert.equal(r.status, 42, `env candidate failed: ${r.stderr}`);
   assert.equal(readFileSync(mark, "utf8"), `${join(envRoot, "scripts", "hook-runner.mjs")}|session-start|{"event":"SessionStart"}`);
 
   // 2. no env: the CLI runs plugin hooks with cwd = plugin dir.
   rmSync(mark, { force: true });
-  r = runIn({ cwd: cwdRoot, env: { ...baseEnv, HOME: fakeHome, MARK: mark } });
+  r = runIn({ cwd: cwdRoot, env: { ...baseEnv, ...homeVars(fakeHome), MARK: mark } });
   assert.equal(r.status, 42, `cwd candidate failed: ${r.stderr}`);
   assert.ok(readFileSync(mark, "utf8").startsWith(join(cwdRoot, "scripts", "hook-runner.mjs")));
 
   // 3. no env, foreign cwd: the documented CLI install path is the last resort
   //    (~/.copilot/installed-plugins/MARKETPLACE/PLUGIN per the CLI plugin
-  //    reference; os.homedir() follows HOME on POSIX and USERPROFILE on Windows).
+  //    reference).
   rmSync(mark, { force: true });
-  r = runIn({ cwd: emptyCwd, env: { ...baseEnv, HOME: fakeHome, MARK: mark } });
+  r = runIn({ cwd: emptyCwd, env: { ...baseEnv, ...homeVars(fakeHome), MARK: mark } });
   assert.equal(r.status, 42, `install-path fallback failed: ${r.stderr}`);
   assert.ok(readFileSync(mark, "utf8").startsWith(join(fakeHome, ".copilot", "installed-plugins", "openviking-team", "openviking-copilot", "scripts", "hook-runner.mjs")));
 
   // 4. nothing anywhere: silent no-op (hooks degrade, they never crash a session).
-  r = runIn({ cwd: emptyCwd, env: { ...baseEnv, HOME: join(baseDir, "nohome"), MARK: mark } });
+  r = runIn({ cwd: emptyCwd, env: { ...baseEnv, ...homeVars(join(baseDir, "nohome")), MARK: mark } });
   assert.equal(r.status, 0, `no-match case must exit 0: ${r.stderr}`);
 
   rmSync(baseDir, { recursive: true, force: true });
 });
 
 test("capture.mjs queues Stop and PreCompact events without PowerShell", async () => {
-  const { queueCaptureEvent } = await import(join(PLUGIN_ROOT, "scripts", "capture.mjs"));
+  const { queueCaptureEvent } = await importPluginModule("scripts", "capture.mjs");
   const baseDir = join(os.tmpdir(), `ov-capture-${process.pid}-${Date.now()}`);
   const event = {
     hook_event_name: "Stop",
@@ -617,7 +632,7 @@ test("capture.mjs queues Stop and PreCompact events without PowerShell", async (
 });
 
 test("uploader path resolution accepts VS Code transcript files and CLI session dirs", async () => {
-  const { transcriptDirFromQueueEntry } = await import(join(PLUGIN_ROOT, "scripts", "uploader.mjs"));
+  const { transcriptDirFromQueueEntry } = await importPluginModule("scripts", "uploader.mjs");
   // VS Code hands hooks a transcript FILE: transcripts/<session-id>.jsonl.
   // 0.4.6 regression: only events.jsonl counted as a file, so this path gained
   // an appended \events.jsonl and the uploader reported transcript missing.
@@ -650,9 +665,14 @@ test("uploader dry-run reads VS Code transcript files end to end (queue + --tran
   mkdirSync(join(fakeHome, ".openviking", "copilot-capture"), { recursive: true });
   writeFileSync(join(fakeHome, ".openviking", "copilot-capture", "queue.jsonl"),
     `${JSON.stringify({ session_id: sessionId, transcript_path: transcriptFile, cwd: baseDir, timestamp: "2026-09-18T00:00:02Z" })}\n`);
+  // HOME (POSIX) + USERPROFILE (Windows) both point at fakeHome: the uploader
+  // resolves ~/.openviking + ~/.copilot through os.homedir(), and on Windows
+  // leaking the real USERPROFILE would read the real queue and write the real
+  // uploader.log.
   const env = {
-    ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== "PLUGIN_ROOT" && k !== "OPENVIKING_URL" && k !== "OPENVIKING_API_KEY" && k !== "OPENVIKING_CLI_CONFIG_FILE")),
+    ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== "PLUGIN_ROOT" && k !== "HOME" && k !== "USERPROFILE" && k !== "OPENVIKING_URL" && k !== "OPENVIKING_API_KEY" && k !== "OPENVIKING_CLI_CONFIG_FILE")),
     HOME: fakeHome,
+    USERPROFILE: fakeHome,
     OPENVIKING_URL: "http://127.0.0.1:9", // never contacted: --dry-run returns before any fetch
     OPENVIKING_API_KEY: "k",
   };
@@ -673,7 +693,7 @@ test("uploader dry-run reads VS Code transcript files end to end (queue + --tran
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /session s-cli: 1 events -> 1 turns/);
     // Importing the module must not execute main() (guard) — safe to import.
-    const mod = await import(join(PLUGIN_ROOT, "scripts", "uploader.mjs"));
+    const mod = await importPluginModule("scripts", "uploader.mjs");
     assert.equal(typeof mod.transcriptDirFromQueueEntry, "function");
   } finally {
     rmSync(baseDir, { recursive: true, force: true });
@@ -681,7 +701,7 @@ test("uploader dry-run reads VS Code transcript files end to end (queue + --tran
 });
 
 test("auto-recall forwards session_id and injects recall hits (mock server)", async () => {
-  const { runRecall } = await import(join(PLUGIN_ROOT, "scripts", "auto-recall.mjs"));
+  const { runRecall } = await importPluginModule("scripts", "auto-recall.mjs");
   const requests = [];
   const server = http.createServer((req, res) => {
     let body = "";
@@ -727,7 +747,7 @@ test("auto-recall forwards session_id and injects recall hits (mock server)", as
 });
 
 test("session-start injects profile and memory listings (mock server)", async () => {
-  const { runSessionStart } = await import(join(PLUGIN_ROOT, "scripts", "session-start.mjs"));
+  const { runSessionStart } = await importPluginModule("scripts", "session-start.mjs");
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, "http://127.0.0.1");
     res.setHeader("content-type", "application/json");
