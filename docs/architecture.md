@@ -33,6 +33,7 @@ install.ps1 已移除               # 安装统一走 CLI 市场 / VS Code 市�
 ## 设计要点
 
 - **hook 快 / uploader 慢分离**：hook <1s 只追加队列；上传分离进程（hooks 要求 <5s）
+- **退出纪律**：所有 hook 脚本禁止在异步 `stdout.write()` / spawn 之后立即 `process.exit()`——Windows 上 libuv 句柄未关完即退出会非确定性崩溃（`uv assert src\win\async.c`，0xC0000409），且崩溃发生在 stdout 冲刷之前 = deny 决策/上下文注入整条丢失（0.4.9 修复）。统一模式：`main()` 返回 + `process.exitCode` 赋值，事件循环自然排空后退出；`main().catch(() => {})` 保证 hook 永不崩会话
 - **幂等**：字节偏移游标（`state\<session_id>.json`）+ OV 会话 ID `import__copilot__<id>`；重跑/崩溃/双启动不重不漏
 - **transcript 路径双形态**：宿主给 hook 的 `transcript_path` 有两种形态——CLI 是目录（`~/.copilot/session-state/<id>/`，内含 `events.jsonl`），VS Code 是文件（`...\GitHub.copilot-chat\transcripts\<session-id>.jsonl`）。uploader 的路径判断只认 `.jsonl` 结尾即文件、其余按目录追加 `events.jsonl`（0.4.6 及更早只认 `events.jsonl` 结尾，VS Code 文件被误判为目录 → `transcript missing`，0.4.7 修复）。游标对两种形态都是"该文件的字节偏移"，state 键仍为 session_id，形态无关
 - **workspace peer 推导**（官方 ovcli 工作区配置同语义）：`.openviking/config.json` 的 `peer.id` > 归一化 git origin > 仓库根；非 git 目录不发 peer
