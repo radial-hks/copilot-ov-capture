@@ -43,6 +43,7 @@ copilot plugin install openviking-copilot@openviking-team
 
 ## 版本
 
+- 0.4.4 — 修复 hooks 静默失效：`timeout` 字段改为 Copilot CLI 认可的 `timeoutSec`（未知字段会导致整个 hook 条目被丢弃）；hook 命令改回 `${PLUGIN_ROOT}/scripts/hook-runner.mjs` 绝对路径（CLI 执行插件 hook 时 cwd=插件目录、VS Code 时 cwd=工作区，相对路径无法两者兼容；`${PLUGIN_ROOT}` 由宿主在命令串展开并注入环境变量）
 - 0.4.3 — 官方 VS Code Agent Plugin 安装兼容：hook 命令改走 `./scripts/hook-runner.mjs`，由 runner 自定位插件根并补齐 `PLUGIN_ROOT`，避免 `${PLUGIN_ROOT}` 在 shell 命令中未注入时展开为空导致 `/scripts/*.mjs` 找不到
 - 0.4.2 — 跨平台 hook 适配：五个 hook 命令统一使用 Node + `${PLUGIN_ROOT}/...` 路径；Stop/PreCompact 改为 `capture.mjs` 入队并分离启动 uploader，Windows/Linux/macOS 均可运行自动召回、开场注入、URI 防护与自动捕获
 - 0.4.1 — 自动召回保守化：查询截短 400 字符 + `query_expansion`/`rewrite` 显式关闭（实测团队服务器的 expansion/rerank 在长查询下超 15s；session_id 去重收益不受影响，检索路径仍有间歇性 12s+ 抖动，hook 静默降级兜底）

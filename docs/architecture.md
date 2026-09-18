@@ -33,7 +33,7 @@ docs/                            # 文档（安装/使用/排障/本文）
 
 ## 设计要点
 
-- **hook 快 / uploader 慢分离**：hook <1s 只追加队列；上传分离进程（hooks 要求 <5s）。插件注册命令只用 Node 与 `./scripts/hook-runner.mjs`，runner 自定位插件根并补齐 `PLUGIN_ROOT` 后再转发到真实脚本，避免官方 VS Code 插件环境未给 hook 命令注入 `${PLUGIN_ROOT}` 时被 shell 展开成空路径；同时避免 macOS/Linux shell 把 Windows 反斜杠当成本地文件名、也避免非 Windows 环境缺少 PowerShell
+- **hook 快 / uploader 慢分离**：hook <1s 只追加队列；上传分离进程（hooks 要求 <5s）。插件 hook 命令统一为 `node "${PLUGIN_ROOT}/scripts/hook-runner.mjs" <event>`：`${PLUGIN_ROOT}` 由 Copilot 宿主在命令串展开并注入环境变量（CLI 与 VS Code 均支持），绝对路径同时兼容 CLI（cwd=插件目录）与 VS Code（cwd=工作区）两种执行环境；runner 负责补齐 `PLUGIN_ROOT` 并转发到真实脚本，仍避免 PowerShell 依赖与 Windows 反斜杠问题。超时字段必须是 `timeoutSec`——Copilot CLI 对含未知字段（如 `timeout`）的 hook 条目会整体静默丢弃
 - **幂等**：字节偏移游标（`state\<session_id>.json`）+ OV 会话 ID `import__copilot__<id>`；重跑/崩溃/双启动不重不漏
 - **提取策略**对齐官方 ingest：user/assistant 文本保留，tool I/O 丢弃，peer_id 取 `copilot/<model>` 与工作区 peer
 - **workspace peer 推导**（官方 ovcli 工作区配置同语义）：`.openviking/config.json` 的 `peer.id` > 归一化 git origin > 仓库根；非 git 目录不发 peer

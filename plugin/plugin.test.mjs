@@ -475,18 +475,19 @@ test("hooks.json wires the full five-event hook face", () => {
     assert.ok(entries.length > 0, `${event} must declare a hook`);
     for (const hook of entries) {
       assert.equal(hook.type, "command", `${event}: type must be command`);
-      assert.equal(hook.command, `node "./scripts/hook-runner.mjs" ${expected[event]}`);
+      assert.equal(hook.command, `node "\${PLUGIN_ROOT}/scripts/hook-runner.mjs" ${expected[event]}`);
+      assert.ok(typeof hook.timeoutSec === "number" && hook.timeoutSec > 0, `${event}: timeoutSec must be a positive number`);
       assert.ok(existsSync(join(PLUGIN_ROOT, "scripts", "hook-runner.mjs")), `${event}: hook runner missing`);
     }
   }
 });
 
-test("hooks.json avoids shell-expanded PLUGIN_ROOT in command strings", () => {
+test("hooks.json uses ${PLUGIN_ROOT} absolute path (CLI expands it, cwd differs per host)", () => {
   const hooks = JSON.parse(readFileSync(join(PLUGIN_ROOT, "com.github.copilot", "hooks", "hooks.json"), "utf8")).hooks;
   for (const [event, entries] of Object.entries(hooks)) {
     for (const hook of entries) {
-      assert.ok(!hook.command.includes("${PLUGIN_ROOT}"), `${event}: hook command must not rely on shell-expanded PLUGIN_ROOT`);
-      assert.match(hook.command, /^node "\.\/scripts\/hook-runner\.mjs" [a-z-]+$/, `${event}: hook command must run the plugin-local hook runner`);
+      assert.match(hook.command, /^node "\$\{PLUGIN_ROOT\}\/scripts\/hook-runner\.mjs" [a-z-]+$/, `${event}: hook command must resolve the runner via \${PLUGIN_ROOT}`);
+      assert.ok(!hook.command.includes("\\") && !/powershell/i.test(hook.command), `${event}: cross-platform constraints`);
     }
   }
 });
@@ -497,7 +498,7 @@ test("hooks.json uses cross-platform node commands only", () => {
     for (const hook of entries) {
       assert.ok(!hook.command.includes("\\"), `${event}: hook command must use forward slashes`);
       assert.ok(!/powershell/i.test(hook.command), `${event}: hook command must not require PowerShell`);
-      assert.match(hook.command, /^node "\.\/scripts\/hook-runner\.mjs" /, `${event}: hook command must run the plugin-local hook runner`);
+      assert.match(hook.command, /^node "\$\{PLUGIN_ROOT\}\/scripts\/hook-runner\.mjs" /, `${event}: hook command must run the plugin-local hook runner`);
     }
   }
   assert.match(hooks.Stop[0].command, / capture$/);
