@@ -4,7 +4,11 @@
     "openviking": {
       "type": "stdio",
       "command": "node",
-      "args": ["${PLUGIN_ROOT}/local-tools/mcp-entry.mjs"]
+      "args": [
+        "-e",
+        "var n=process.argv[1];var c=require('child_process');var fs=require('fs');var p=require('path');var r=['PLUGIN_ROOT','COPILOT_PLUGIN_ROOT','CLAUDE_PLUGIN_ROOT'].map(function(k){return process.env[k]}).filter(Boolean);r.push(process.cwd());r.push(p.join(require('os').homedir(),'.copilot','installed-plugins','openviking-team','openviking-copilot'));for(var i=0;i<r.length;i++){var s=p.resolve(r[i],n);if(fs.existsSync(s)){var t=c.spawnSync(process.execPath,[s],{stdio:'inherit'}).status;process.exit(t==null?1:t)}}console.error('openviking-copilot: MCP entry not found under any plugin root candidate: '+n);process.exit(1)",
+        "local-tools/mcp-entry.mjs"
+      ]
     }
   }
 }

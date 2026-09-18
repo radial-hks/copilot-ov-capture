@@ -5,7 +5,7 @@
 ```
 plugin/                          # Agent Plugins 1.0 包（分发单元）
 ├── plugin.json                  # 清单（name: openviking-copilot）
-├── mcp.json                     # stdio MCP 代理声明（入口在 local-tools/）
+├── mcp.json                     # stdio MCP 代理声明（自定位引导 → local-tools/mcp-entry.mjs；宿主不展开 ${PLUGIN_ROOT}，见 0.4.10）
 ├── servers/                     # 官方 mcp-proxy.mjs + shared（勿改，上游同步）
 ├── local-tools/                 # 本地扩展（上游同步安全区，servers/ 覆盖不影响）
 │   ├── mcp-entry.mjs            # MCP 入口：共享代理核心 + localToolProvider

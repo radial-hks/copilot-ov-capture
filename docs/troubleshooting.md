@@ -5,6 +5,7 @@
 | 症状 | 处理 |
 |---|---|
 | Copilot 说没有 openviking MCP 工具 | CLI 安装用户：`copilot plugin list` 确认已装 + 终端重启；VS Code 市场安装用户：检查 settings.json 的 `chat.plugins.marketplaces`，确认 Reload Window 过；`Developer: Show Agent Debug Logs` 搜 plugin |
+| 插件 MCP 启动报 `Process exited with code 1`，日志见 `Cannot find module ...\${PLUGIN_ROOT}\local-tools\mcp-entry.mjs` | 宿主不展开 mcp.json args 里的 `${PLUGIN_ROOT}` 占位符（≤0.4.9 已知缺口）。升级到 ≥0.4.10（args 已改 `node -e` 自定位引导），Reload Window；若 stderr 是 `openviking-copilot: MCP entry not found ...` 说明引导没找到插件目录，检查 `~/.copilot/installed-plugins/openviking-team/openviking-copilot` 是否存在 |
 | write/edit 写 `viking://~/skills/...` 报只读/被拒 | **设计边界非故障**：服务端 MCP `write` 的可写域不含 `skills/`。用 `add_skill` 新建、`update_skill` 整包替换（Copilot 里直接说"存成 skill"即可）；doctor 的"技能 REST 接口"项 404 说明服务端版本过旧，找管理员升级 |
 | health 报错/连接失败 | `curl <your-openviking-server-url>/health`；确认内网/VPN 通；检查 `ovcli.conf` 的 key 是否完整（401 = key 错） |
 | uploader.log 报 UPLOAD FAILED | 服务器暂不可达，队列保留在 `queue.jsonl`，下次会话结束自动重试；也可手动 `node "<插件目录>\scripts\uploader.mjs"`（插件目录见 `copilot plugin list`，CLI 安装通常在 `%USERPROFILE%\.copilot\installed-plugins\openviking-team\openviking-copilot`） |

@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "openviking-copilot",
-  "version": "0.4.9",
+  "version": "0.4.10",
   "description": "OpenViking long-term memory for GitHub Copilot: MCP recall/persist tools plus local skill tools (add/update/validate) and task_status, automatic session capture with PreCompact archiving, profile injection at SessionStart, viking:// URI guarding, and automatic recall injection (auto-recall + auto-capture + doctor).",
   "author": {
     "name": "openviking-copilot maintainers",

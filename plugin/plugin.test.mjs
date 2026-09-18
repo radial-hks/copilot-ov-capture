@@ -60,6 +60,17 @@ function loadJson(relPath) {
 // bash, and cmd all pass it to node verbatim.
 const BOOTSTRAP_JS = "var n=process.argv[1];var c=require('child_process');var fs=require('fs');var p=require('path');var r=['PLUGIN_ROOT','COPILOT_PLUGIN_ROOT','CLAUDE_PLUGIN_ROOT'].map(function(k){return process.env[k]}).filter(Boolean);r.push(process.cwd());r.push(p.join(require('os').homedir(),'.copilot','installed-plugins','openviking-team','openviking-copilot'));for(var i=0;i<r.length;i++){var s=p.resolve(r[i],'scripts','hook-runner.mjs');if(fs.existsSync(s)){process.exit(c.spawnSync(process.execPath,[s,n],{stdio:'inherit'}).status||0)}}process.exit(0)";
 
+// Same self-locating bootstrap, but for the stdio MCP entry: VS Code's
+// agent-plugins host does not expand ${PLUGIN_ROOT} in mcp.json args (it
+// passes the literal through and node resolves it against the extension
+// host cwd -> MODULE_NOT_FOUND -> exit 1). The bootstrap resolves the plugin
+// root the same way hooks do — env PLUGIN_ROOT, then cwd, then the
+// documented CLI install path — and execs the entry in a child node process.
+// Unlike the hook bootstrap it exits 1 with a stderr hint on miss: an MCP
+// server has no session to degrade around, and a silent exit 0 cost a full
+// debugging round-trip once already.
+const MCP_BOOTSTRAP_JS = "var n=process.argv[1];var c=require('child_process');var fs=require('fs');var p=require('path');var r=['PLUGIN_ROOT','COPILOT_PLUGIN_ROOT','CLAUDE_PLUGIN_ROOT'].map(function(k){return process.env[k]}).filter(Boolean);r.push(process.cwd());r.push(p.join(require('os').homedir(),'.copilot','installed-plugins','openviking-team','openviking-copilot'));for(var i=0;i<r.length;i++){var s=p.resolve(r[i],n);if(fs.existsSync(s)){var t=c.spawnSync(process.execPath,[s],{stdio:'inherit'}).status;process.exit(t==null?1:t)}}console.error('openviking-copilot: MCP entry not found under any plugin root candidate: '+n);process.exit(1)";
+
 function expectedBootstrapCommand(subcommand) {
   return `node -e "${BOOTSTRAP_JS}" ${subcommand}`;
 }
@@ -254,11 +265,64 @@ test("local-tools entry chain resolves: mcp-entry.mjs and skill-tools.mjs import
 test("mcp.json points at the local-tools entry so skill tools are exposed", () => {
   const mcp = loadJson("mcp.json");
   const server = mcp.mcpServers.openviking;
-  const arg = (server.args || []).find((a) => String(a).includes("${PLUGIN_ROOT}"));
-  assert.ok(arg, "openviking server must declare a ${PLUGIN_ROOT} arg");
-  const expanded = resolve(arg.replaceAll("${PLUGIN_ROOT}", PLUGIN_ROOT));
-  assert.ok(existsSync(expanded), `mcp.json references missing entry: ${arg}`);
-  assert.equal(expanded, join(PLUGIN_ROOT, "local-tools", "mcp-entry.mjs"));
+  assert.equal(server.command, "node");
+  assert.deepEqual(server.args, ["-e", MCP_BOOTSTRAP_JS, "local-tools/mcp-entry.mjs"],
+    "args must be the self-locating bootstrap: hosts do not reliably expand ${PLUGIN_ROOT} in mcp.json args");
+  assert.ok(existsSync(join(PLUGIN_ROOT, "local-tools", "mcp-entry.mjs")), "local-tools/mcp-entry.mjs missing");
+});
+
+test("mcp.json bootstrap is shell-agnostic and locates the entry at runtime", () => {
+  const server = loadJson("mcp.json").mcpServers.openviking;
+  const bootstrap = server.args[1];
+  // Same shell-safety contract as the hook bootstrap: hosts that spawn via a
+  // shell (PowerShell, bash, cmd) must pass the -e script through verbatim.
+  assert.ok(!bootstrap.includes("$"), "bootstrap must not contain shell variable syntax");
+  assert.ok(!bootstrap.includes("`"), "bootstrap must not contain backticks");
+  assert.ok(!bootstrap.includes('"'), "bootstrap must not contain double quotes");
+  assert.ok(bootstrap.includes("PLUGIN_ROOT"), "bootstrap must try the PLUGIN_ROOT env candidates");
+  assert.ok(bootstrap.includes("process.cwd()"), "bootstrap must try the cwd candidate");
+  assert.ok(bootstrap.includes("installed-plugins"), "bootstrap must fall back to the CLI install path");
+  assert.ok(bootstrap.includes("MCP entry not found"), "bootstrap must surface a plugin-context miss hint on stderr");
+});
+
+test("mcp bootstrap locates and launches the entry without inherited PLUGIN_ROOT", () => {
+  // Dead-loopback OV endpoint so credential resolution never touches the
+  // real ovcli.conf and the (instantly refused) fetch lands in the degrade
+  // path — the proxy starts, sees stdin EOF, and shuts down cleanly.
+  const env = Object.fromEntries(Object.entries(process.env)
+    .filter(([key]) => key !== "PLUGIN_ROOT" && key !== "OPENVIKING_URL" && key !== "OPENVIKING_API_KEY" && key !== "OPENVIKING_CLI_CONFIG_FILE"));
+  env.OPENVIKING_URL = "http://127.0.0.1:9";
+  env.OPENVIKING_API_KEY = "k";
+  // Candidate 1: env PLUGIN_ROOT from a foreign cwd (VS Code launches MCP
+  // servers from the extension host cwd, not the plugin dir).
+  const viaEnv = spawnSync(process.execPath, ["-e", MCP_BOOTSTRAP_JS, "local-tools/mcp-entry.mjs"], {
+    cwd: os.tmpdir(),
+    input: "",
+    encoding: "utf8",
+    env: { ...env, PLUGIN_ROOT: PLUGIN_ROOT },
+    timeout: 30000,
+  });
+  assert.equal(viaEnv.status, 0, viaEnv.stderr);
+  // Candidate 2: no env at all, entry found via cwd (CLI launches).
+  const viaCwd = spawnSync(process.execPath, ["-e", MCP_BOOTSTRAP_JS, "local-tools/mcp-entry.mjs"], {
+    cwd: PLUGIN_ROOT,
+    input: "",
+    encoding: "utf8",
+    env,
+    timeout: 30000,
+  });
+  assert.equal(viaCwd.status, 0, viaCwd.stderr);
+  // Miss: entry not found anywhere -> exit 1 with a stderr hint (the old
+  // MODULE_NOT_FOUND gave node's loader stack instead of plugin context).
+  const miss = spawnSync(process.execPath, ["-e", MCP_BOOTSTRAP_JS, "local-tools/no-such-entry.mjs"], {
+    cwd: PLUGIN_ROOT,
+    input: "",
+    encoding: "utf8",
+    env,
+    timeout: 30000,
+  });
+  assert.equal(miss.status, 1);
+  assert.match(miss.stderr, /MCP entry not found/);
 });
 
 test("skill tool provider lists add/update/validate/task_status with flat schemas", async () => {
