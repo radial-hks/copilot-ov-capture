@@ -1,4 +1,4 @@
-// GENERATED FROM examples/memory-plugin-shared/lib. DO NOT EDIT.
+// Vendored from examples/memory-plugin-shared/lib (volcengine/OpenViking) with local modifications. See NOTICE for the delta; do not blind-resync.
 /**
  * Shared stdio -> streamable-HTTP MCP proxy core for OpenViking memory plugins.
  *

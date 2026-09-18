@@ -1,4 +1,4 @@
-// GENERATED FROM examples/memory-plugin-shared/lib. DO NOT EDIT.
+// Vendored from examples/memory-plugin-shared/lib (volcengine/OpenViking) with local modifications. See NOTICE for the delta; do not blind-resync.
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";

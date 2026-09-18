@@ -1,0 +1,42 @@
+copilot-ov-capture (openviking-copilot)
+Copyright 2026 radial-hks
+
+This project is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes software vendored from the OpenViking project
+(https://github.com/volcengine/OpenViking), examples/ directory,
+itself licensed under the Apache License, Version 2.0:
+
+  plugin/scripts/lib/profile-inject.mjs
+    - Source: examples/memory-plugin-shared/lib/profile-inject.mjs
+    - Status: unmodified (byte-identical body; header comment adjusted).
+
+  plugin/servers/shared/credentials.mjs
+    - Source: examples/memory-plugin-shared/lib/credentials.mjs
+    - Local modifications: harness-agnostic ov.conf section resolution
+      (harnessSection), explicit fetch timeout constants, and related
+      credential-path handling for non-Claude/Codex harnesses.
+
+  plugin/servers/shared/mcp-proxy-config.mjs
+    - Source: examples/memory-plugin-shared/lib/mcp-proxy-config.mjs
+    - Local modifications: OPENVIKING_EXTRA_HEADERS environment-variable
+      support for gateway deployments requiring custom request headers.
+
+  plugin/servers/shared/mcp-proxy-core.mjs
+    - Source: examples/memory-plugin-shared/lib/mcp-proxy-core.mjs
+    - Local modifications: minor divergence from the upstream copy at the
+      time of vendoring; to be reconciled with upstream during the planned
+      memory-plugin-shared integration (see docs/architecture.md).
+
+  plugin/servers/shared/debug-log.mjs
+    - Source: examples/memory-plugin-shared/lib/debug-log.mjs
+    - Status: unmodified.
+
+The following file carries a "GENERATED" header for consistency with the
+vendored set but is authored in this repository (no upstream counterpart):
+
+  plugin/servers/shared/ov-http.mjs
+
+Upstream files are vendored because the Copilot plugin marketplace requires
+self-contained plugin bundles. Resync procedure and drift policy are
+documented in docs/architecture.md.

@@ -1,4 +1,5 @@
-// GENERATED FROM examples/memory-plugin-shared/lib. DO NOT EDIT.
+// Authored in copilot-ov-capture; kept beside the vendored shared modules for
+// symmetry. No upstream counterpart (see NOTICE).
 /**
  * The one path from a hook to the OpenViking server.
  *
