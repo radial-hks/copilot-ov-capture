@@ -100,7 +100,8 @@ curl -X POST <your-openviking-server-url>/api/v1/admin/accounts/<your-account-id
 
 1. 改代码 → 走回归验证链
 2. `plugin/plugin.json` bump version；`.github/plugin/marketplace.json` 同步 version（**CI 会校验两者一致，不一致直接红**）
-3. commit + push（master）—— push 触发 GitHub Actions `plugin-gate`：脚本语法 / 规范测试 / JSON 合法性 / 版本一致性 / 敏感扫描，全绿才算发版成功
-4. 通知组员按升级流程操作（installation.md 末节）
+3. `docs/changelog.md` 顶部加本版条目（README 版本节只保留里程碑表，不发新条目，仅在跨里程碑时更新）
+4. commit + push（master）—— push 触发 GitHub Actions `plugin-gate`：脚本语法 / 规范测试 / JSON 合法性 / 版本一致性 / 敏感扫描，全绿才算发版成功
+5. 通知组员按升级流程操作（installation.md 末节）
 
 CI 失败时不要让组员拉取——Actions 页（仓库 → Actions 标签）看红叉原因，修复合并后再发通知。
