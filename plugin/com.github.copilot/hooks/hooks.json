@@ -3,35 +3,35 @@
     "SessionStart": [
       {
         "type": "command",
-        "command": "node \"${PLUGIN_ROOT}/scripts/session-start.mjs\"",
+        "command": "node \"./scripts/hook-runner.mjs\" session-start",
         "timeout": 30
       }
     ],
     "UserPromptSubmit": [
       {
         "type": "command",
-        "command": "node \"${PLUGIN_ROOT}/scripts/auto-recall.mjs\"",
+        "command": "node \"./scripts/hook-runner.mjs\" auto-recall",
         "timeout": 25
       }
     ],
     "PreToolUse": [
       {
         "type": "command",
-        "command": "node \"${PLUGIN_ROOT}/scripts/uri-guard.mjs\"",
+        "command": "node \"./scripts/hook-runner.mjs\" uri-guard",
         "timeout": 10
       }
     ],
     "PreCompact": [
       {
         "type": "command",
-        "command": "node \"${PLUGIN_ROOT}/scripts/capture.mjs\"",
+        "command": "node \"./scripts/hook-runner.mjs\" capture",
         "timeout": 30
       }
     ],
     "Stop": [
       {
         "type": "command",
-        "command": "node \"${PLUGIN_ROOT}/scripts/capture.mjs\"",
+        "command": "node \"./scripts/hook-runner.mjs\" capture",
         "timeout": 30
       }
     ]

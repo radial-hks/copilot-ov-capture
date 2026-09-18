@@ -464,14 +464,29 @@ test("hooks.json wires the full five-event hook face", () => {
   const hooks = JSON.parse(readFileSync(join(PLUGIN_ROOT, "com.github.copilot", "hooks", "hooks.json"), "utf8")).hooks;
   const events = Object.keys(hooks);
   assert.deepEqual(events.sort(), ["PreCompact", "PreToolUse", "SessionStart", "Stop", "UserPromptSubmit"]);
+  const expected = {
+    SessionStart: "session-start",
+    UserPromptSubmit: "auto-recall",
+    PreToolUse: "uri-guard",
+    PreCompact: "capture",
+    Stop: "capture",
+  };
   for (const [event, entries] of Object.entries(hooks)) {
     assert.ok(entries.length > 0, `${event} must declare a hook`);
     for (const hook of entries) {
       assert.equal(hook.type, "command", `${event}: type must be command`);
-      const m = /\$\{PLUGIN_ROOT\}([^"]+)/.exec(hook.command);
-      assert.ok(m, `${event}: command must reference \${PLUGIN_ROOT\}`);
-      const script = m[1].replaceAll("\\", "/");
-      assert.ok(existsSync(join(PLUGIN_ROOT, script)), `${event}: referenced script missing: ${script}`);
+      assert.equal(hook.command, `node "./scripts/hook-runner.mjs" ${expected[event]}`);
+      assert.ok(existsSync(join(PLUGIN_ROOT, "scripts", "hook-runner.mjs")), `${event}: hook runner missing`);
+    }
+  }
+});
+
+test("hooks.json avoids shell-expanded PLUGIN_ROOT in command strings", () => {
+  const hooks = JSON.parse(readFileSync(join(PLUGIN_ROOT, "com.github.copilot", "hooks", "hooks.json"), "utf8")).hooks;
+  for (const [event, entries] of Object.entries(hooks)) {
+    for (const hook of entries) {
+      assert.ok(!hook.command.includes("${PLUGIN_ROOT}"), `${event}: hook command must not rely on shell-expanded PLUGIN_ROOT`);
+      assert.match(hook.command, /^node "\.\/scripts\/hook-runner\.mjs" [a-z-]+$/, `${event}: hook command must run the plugin-local hook runner`);
     }
   }
 });
@@ -482,11 +497,21 @@ test("hooks.json uses cross-platform node commands only", () => {
     for (const hook of entries) {
       assert.ok(!hook.command.includes("\\"), `${event}: hook command must use forward slashes`);
       assert.ok(!/powershell/i.test(hook.command), `${event}: hook command must not require PowerShell`);
-      assert.match(hook.command, /^node "\$\{PLUGIN_ROOT\}\//, `${event}: hook command must run a plugin-local Node script`);
+      assert.match(hook.command, /^node "\.\/scripts\/hook-runner\.mjs" /, `${event}: hook command must run the plugin-local hook runner`);
     }
   }
-  assert.match(hooks.Stop[0].command, /\/scripts\/capture\.mjs"$/);
-  assert.match(hooks.PreCompact[0].command, /\/scripts\/capture\.mjs"$/);
+  assert.match(hooks.Stop[0].command, / capture$/);
+  assert.match(hooks.PreCompact[0].command, / capture$/);
+});
+
+test("hook runner locates scripts without inherited PLUGIN_ROOT", () => {
+  const result = spawnSync(process.execPath, ["./scripts/hook-runner.mjs", "session-start"], {
+    cwd: PLUGIN_ROOT,
+    input: "{}",
+    encoding: "utf-8",
+    env: Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== "PLUGIN_ROOT")),
+  });
+  assert.equal(result.status, 0, result.stderr);
 });
 
 test("capture.mjs queues Stop and PreCompact events without PowerShell", async () => {
