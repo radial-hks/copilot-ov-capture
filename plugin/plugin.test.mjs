@@ -482,27 +482,34 @@ test("hooks.json wires the full five-event hook face", () => {
   }
 });
 
-test("hooks.json uses ${PLUGIN_ROOT} absolute path (CLI expands it, cwd differs per host)", () => {
+test("hooks.json carries all four command dialects per event", () => {
   const hooks = JSON.parse(readFileSync(join(PLUGIN_ROOT, "com.github.copilot", "hooks", "hooks.json"), "utf8")).hooks;
+  const subcommands = { SessionStart: "session-start", UserPromptSubmit: "auto-recall", PreToolUse: "uri-guard", PreCompact: "capture", Stop: "capture" };
   for (const [event, entries] of Object.entries(hooks)) {
     for (const hook of entries) {
-      assert.match(hook.command, /^node "\$\{PLUGIN_ROOT\}\/scripts\/hook-runner\.mjs" [a-z-]+$/, `${event}: hook command must resolve the runner via \${PLUGIN_ROOT}`);
-      assert.ok(!hook.command.includes("\\") && !/powershell/i.test(hook.command), `${event}: cross-platform constraints`);
+      const dialects = ["command", "bash", "windows", "powershell"];
+      for (const dialect of dialects) {
+        const cmd = hook[dialect];
+        assert.equal(typeof cmd, "string", `${event}: ${dialect} command required`);
+        assert.ok(cmd.includes("scripts/hook-runner.mjs"), `${event}: ${dialect} must target hook-runner.mjs`);
+        assert.ok(cmd.endsWith(` ${subcommands[event]}`), `${event}: ${dialect} must pass the ${subcommands[event]} subcommand`);
+        if (dialect === "command" || dialect === "bash") {
+          // POSIX paths: expanded by VS Code (all OS), by new CLI versions at
+          // load time, or by bash from the injected PLUGIN_ROOT env var.
+          assert.match(cmd, /\$\{PLUGIN_ROOT\}\/scripts\/hook-runner\.mjs/, `${event}: ${dialect} must use \${PLUGIN_ROOT}`);
+          assert.ok(!cmd.includes("\\"), `${event}: ${dialect} must use forward slashes`);
+          assert.ok(!/powershell/i.test(cmd), `${event}: ${dialect} must not require PowerShell`);
+        } else {
+          // Windows dialects must survive old CLI versions that pass the
+          // command to PowerShell WITHOUT expanding ${PLUGIN_ROOT} (the PS
+          // variable syntax silently expands it to empty). $env:PLUGIN_ROOT
+          // reads the injected env var at PS runtime instead.
+          assert.match(cmd, /\$env:PLUGIN_ROOT\/scripts\/hook-runner\.mjs/, `${event}: ${dialect} must use \$env:PLUGIN_ROOT`);
+          assert.match(cmd, /^powershell -NoProfile -Command /, `${event}: ${dialect} must invoke powershell explicitly (host shell may be cmd)`);
+        }
+      }
     }
   }
-});
-
-test("hooks.json uses cross-platform node commands only", () => {
-  const hooks = JSON.parse(readFileSync(join(PLUGIN_ROOT, "com.github.copilot", "hooks", "hooks.json"), "utf8")).hooks;
-  for (const [event, entries] of Object.entries(hooks)) {
-    for (const hook of entries) {
-      assert.ok(!hook.command.includes("\\"), `${event}: hook command must use forward slashes`);
-      assert.ok(!/powershell/i.test(hook.command), `${event}: hook command must not require PowerShell`);
-      assert.match(hook.command, /^node "\$\{PLUGIN_ROOT\}\/scripts\/hook-runner\.mjs" /, `${event}: hook command must run the plugin-local hook runner`);
-    }
-  }
-  assert.match(hooks.Stop[0].command, / capture$/);
-  assert.match(hooks.PreCompact[0].command, / capture$/);
 });
 
 test("hook runner locates scripts without inherited PLUGIN_ROOT", () => {

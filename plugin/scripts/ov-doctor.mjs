@@ -16,6 +16,7 @@ import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const results = [];
 function check(name, ok, detail, fix) {
@@ -39,14 +40,15 @@ if (existsSync(confPath)) {
     const conf = JSON.parse(readFileSync(confPath, "utf8"));
     cfg.url = conf.url || "";
     cfg.apiKey = conf.api_key || "";
-    check("凭据文件 ovcli.conf", Boolean(cfg.url && cfg.apiKey),
-      `${confPath} (url=${cfg.url || "缺失"})`,
-      "重新运行 install.ps1 -ApiKey <你的key>，或手工编辑该文件补全 url/api_key");
+      check("凭据文件 ovcli.conf", Boolean(cfg.url && cfg.apiKey),
+        `${confPath} (url=${cfg.url || "缺失"})`,
+        "手工编辑该文件补全 url/api_key，格式见 docs/installation.md（一行 JSON）");
   } catch (e) {
     check("凭据文件 ovcli.conf", false, `${confPath} 解析失败: ${e.message}`, "检查 JSON 语法");
   }
 } else {
-  check("凭据文件 ovcli.conf", false, `未找到 ${confPath}`, "运行 install.ps1 或手工创建");
+  check("凭据文件 ovcli.conf", false, `未找到 ${confPath}`,
+    "手工创建 %USERPROFILE%\\.openviking\\ovcli.conf，内容 {\"url\":\"<服务器地址>\",\"api_key\":\"<你的user-key>\"}，详见 docs/installation.md");
 }
 if (process.env.OPENVIKING_URL) check("环境变量覆盖", true, "OPENVIKING_URL 已设置（优先于 ovcli.conf）", "");
 
@@ -135,24 +137,78 @@ if (existsSync(CAPTURE_DIR)) {
   check("捕获管线", false, `${CAPTURE_DIR} 不存在（尚未触发过任何 Copilot 会话捕获）`,
     "正常——首次 Copilot 会话结束后自动创建");
 }
-
-// 6. VS Code settings registration
-const codeSettings = [join(process.env.APPDATA || "", "Code", "User", "settings.json")].find(existsSync);
-if (codeSettings) {
-  try {
-    const s = JSON.parse(readFileSync(codeSettings, "utf8"));
-    const enabled = s["chat.plugins.enabled"] === true;
-    const locs = s["chat.pluginLocations"] || {};
-    const pluginRegistered = Object.keys(locs).some(k => k.includes("copilot-ov-plugin") && locs[k] === true);
-    check("VS Code 插件注册", enabled && pluginRegistered,
-      `chat.plugins.enabled=${enabled}, pluginLocations 含 copilot-ov-plugin=${pluginRegistered}`,
-      "重新运行 install.ps1（会合并用户级 settings.json）；改完 Reload Window");
-  } catch (e) {
-    check("VS Code 插件注册", false, `settings.json 解析失败: ${e.message}`, "");
+// 6. plugin installation (CLI marketplace / VS Code marketplace / pluginLocations)
+const PLUGIN_ROOT_DIR = dirname(fileURLToPath(import.meta.url)) ? join(dirname(fileURLToPath(import.meta.url)), "..") : "";
+{
+  // CLI-installed copies are auto-discovered by VS Code; pluginLocations is
+  // only needed for manual local installs.
+  const cliInstalled = existsSync(join(HOME, ".copilot", "installed-plugins"))
+    && (function find() {
+      try {
+        for (const mp of readdirSync(join(HOME, ".copilot", "installed-plugins"))) {
+          const p = join(HOME, ".copilot", "installed-plugins", mp, "openviking-copilot");
+          if (existsSync(p)) return p;
+        }
+      } catch { /* not installed via CLI */ }
+      return "";
+    })();
+  const codeSettings = [join(process.env.APPDATA || "", "Code", "User", "settings.json")].find(existsSync);
+  let registered = Boolean(cliInstalled);
+  let detail = cliInstalled ? `CLI 安装于 ${cliInstalled}（VS Code 自动发现）` : "";
+  if (!registered && codeSettings) {
+    try {
+      const s = JSON.parse(readFileSync(codeSettings, "utf8"));
+      const enabled = s["chat.plugins.enabled"];
+      const locs = s["chat.pluginLocations"] || {};
+      const mkt = (s["chat.plugins.marketplaces"] || []).some(m => String(m).includes("copilot-ov-capture"));
+      const locRegistered = Object.keys(locs).some(k => k.includes("copilot-ov") && locs[k] === true);
+      registered = locRegistered || mkt;
+      detail = `chat.plugins.enabled=${enabled === true}, pluginLocations=${locRegistered}, marketplaces=${mkt} (${codeSettings})`;
+    } catch (e) {
+      detail = `settings.json 解析失败: ${e.message}`;
+    }
   }
-} else {
-  check("VS Code 插件注册", false, "未找到用户级 settings.json（VS Code 未启动过或自定义 user-data-dir）",
-    "启动一次 VS Code 后重新运行 doctor");
+  check("插件注册", registered, detail || "未找到任何安装痕迹（CLI/VS Code 市场/pluginLocations 均无）",
+    registered ? "" : "按 docs/installation.md 标准流程安装：copilot plugin install openviking-copilot@openviking-team，或 VS Code 市场安装；装完 Reload Window");
+}
+
+// 7. hook wiring: every command dialect must resolve to a real script
+{
+  const hooksPath = join(PLUGIN_ROOT_DIR, "com.github.copilot", "hooks", "hooks.json");
+  let ok = false;
+  let detail = "";
+  if (!existsSync(hooksPath)) {
+    detail = `未找到 ${hooksPath}`;
+  } else try {
+    const hooks = JSON.parse(readFileSync(hooksPath, "utf8")).hooks || {};
+    const dialects = ["command", "windows", "powershell", "bash"];
+    let checked = 0;
+    for (const entries of Object.values(hooks)) {
+      for (const hook of entries || []) {
+        for (const d of dialects) {
+          const cmd = hook[d];
+          if (typeof cmd !== "string") continue;
+          const m = /\$\{PLUGIN_ROOT\}|\$env:PLUGIN_ROOT/.exec(cmd);
+          if (!m) { ok = false; detail = `${d} 命令缺少 PLUGIN_ROOT 引用`; checked = -1; break; }
+          const script = "scripts/hook-runner.mjs";
+          if (!cmd.includes(script)) { ok = false; detail = `${d} 命令未指向 ${script}`; checked = -1; break; }
+          checked++;
+        }
+        if (checked < 0) break;
+      }
+      if (checked < 0) break;
+    }
+    if (checked > 0) {
+      ok = existsSync(join(PLUGIN_ROOT_DIR, "scripts", "hook-runner.mjs"));
+      detail = ok
+        ? `四方言命令均指向 scripts/hook-runner.mjs（command/windows/powershell/bash 共 ${checked} 处）`
+        : `scripts/hook-runner.mjs 不存在于 ${PLUGIN_ROOT_DIR}`;
+    }
+  } catch (e) {
+    detail = `hooks.json 解析失败: ${e.message}`;
+  }
+  check("Hook 命令路径", ok, detail,
+    "hooks.json 损坏或被改写——重新安装插件：copilot plugin install openviking-copilot@openviking-team（CLI 有缓存陷阱，重装才会覆盖）");
 }
 
 // report

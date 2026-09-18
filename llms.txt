@@ -77,12 +77,15 @@ CLI 安装后的插件目录会被 VS Code 自动发现。让用户在 VS Code �
 ### 第 5 步：验证
 
 ```powershell
-node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\ov-doctor.mjs
+node "%USERPROFILE%\.copilot\installed-plugins\openviking-team\openviking-copilot\scripts\ov-doctor.mjs"
 ```
 
-逐项解读输出（10 项体检，PASS/FAIL 带修复提示）：
+> 若路径不存在（CLI 版本目录结构差异），先跑 `copilot plugin list` 找到插件目录再对路径运行 doctor。
+
+逐项解读输出（9 项体检，PASS/FAIL 带修复提示）：
 - 有 FAIL → 按 FAIL 项的"修复"提示处理；处理后重跑 doctor
-- `VS Code 插件注册` 项走 CLI/市场安装时可能显示未注册（doctor 检查的是 chat.pluginLocations 方式）——若 `copilot plugin list` 或 @agentPlugins 已显示 Installed，此 FAIL 可忽略，其他项全绿即成功
+- `插件注册` 项已兼容 CLI 市场安装路径——CLI 装的用户 doctor 会显示 `CLI 安装于 ...`；VS Code 市场安装用户显示 pluginLocations/marketplaces 状态
+- `Hook 命令路径` 项必须 PASS——FAIL 说明 hooks.json 被改写或安装了旧版本（升级插件后重跑）
 - 全绿 → 安装完成。告诉用户：新开 Copilot 会话随便问个问题（如"帮我回顾之前做过的类似功能"），之后可以用了
 
 ## 常见问题（详见 docs/troubleshooting.md）

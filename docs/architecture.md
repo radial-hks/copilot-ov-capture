@@ -12,28 +12,27 @@ plugin/                          # Agent Plugins 1.0 包（分发单元）
 │   └── skill-tools.mjs          # add/update/validate_skill + task_status（REST）
 ├── skills/                      # 官方 openviking-memory / ov-memory-troubleshoot（勿改）
 ├── scripts/
-│   ├── hook-runner.mjs          # hook 入口：自定位插件根，补齐 PLUGIN_ROOT 后转发
 │   ├── auto-recall.mjs          # UserPromptSubmit：检索+注入 <openviking-context>（带 session_id）
 │   ├── session-start.mjs        # SessionStart：profile + 可用记忆清单注入
 │   ├── uri-guard.mjs            # PreToolUse：拒绝文件工具误用 viking:// URI
-│   ├── capture.mjs              # Stop/PreCompact hook：跨平台入队→分离启动 uploader
-│   ├── capture.ps1              # 旧版 Windows PowerShell hook（保留给历史安装排障）
+│   ├── capture.mjs              # Stop/PreCompact hook（跨平台 Node）：入队→分离启动 uploader
+│   ├── hook-runner.mjs          # hook 入口分发（自算 PLUGIN_ROOT；capture.ps1 为旧版遗留，见下）
 │   ├── uploader.mjs             # 游标增量解析 transcript→提取文本→OV 会话 API
-│   ├── ov-doctor.mjs            # 10 项自诊断（含技能 REST 接口检查）
+│   ├── ov-doctor.mjs            # 9 项自诊断（含 Hook 命令路径检查）
 │   └── lib/
 │       ├── ov-common.mjs        # hook 共享：配置链 + workspace peer + fetchJSON
 │       └── profile-inject.mjs   # 官方共享层 vendored（上游整文件覆盖同步）
 └── com.github.copilot/
-    └── hooks/hooks.json         # 五事件（SessionStart/UserPromptSubmit/PreToolUse/PreCompact/Stop）
+    └── hooks/hooks.json         # 五事件，每事件四方言命令（见设计要点）
 
-install.ps1                      # 组员安装器（拷贝+凭据+VS Code settings 合并）
 .github/plugin/marketplace.json  # 插件市场清单（本仓库即市场）
 docs/                            # 文档（安装/使用/排障/本文）
+install.ps1 已移除               # 安装统一走 CLI 市场 / VS Code 市场（标准流程）
 ```
 
 ## 设计要点
 
-- **hook 快 / uploader 慢分离**：hook <1s 只追加队列；上传分离进程（hooks 要求 <5s）。插件 hook 命令统一为 `node "${PLUGIN_ROOT}/scripts/hook-runner.mjs" <event>`：`${PLUGIN_ROOT}` 由 Copilot 宿主在命令串展开并注入环境变量（CLI 与 VS Code 均支持），绝对路径同时兼容 CLI（cwd=插件目录）与 VS Code（cwd=工作区）两种执行环境；runner 负责补齐 `PLUGIN_ROOT` 并转发到真实脚本，仍避免 PowerShell 依赖与 Windows 反斜杠问题。超时字段必须是 `timeoutSec`——Copilot CLI 对含未知字段（如 `timeout`）的 hook 条目会整体静默丢弃
+- **hook 快 / uploader 慢分离**：hook <1s 只追加队列；上传分离进程（hooks 要求 <5s）
 - **幂等**：字节偏移游标（`state\<session_id>.json`）+ OV 会话 ID `import__copilot__<id>`；重跑/崩溃/双启动不重不漏
 - **提取策略**对齐官方 ingest：user/assistant 文本保留，tool I/O 丢弃，peer_id 取 `copilot/<model>` 与工作区 peer
 - **workspace peer 推导**（官方 ovcli 工作区配置同语义）：`.openviking/config.json` 的 `peer.id` > 归一化 git origin > 仓库根；非 git 目录不发 peer
@@ -44,6 +43,7 @@ docs/                            # 文档（安装/使用/排障/本文）
 - **PreCompact 归档**：压缩前触发捕获管线（上传增量 + commit keep 0），长会话压缩不丢未归档上下文；官方 CC 同语义（PreCompact 只 commit）
 - **上游同步注意**：`local-tools/mcp-entry.mjs` 的 `readProxyConfig` 与 `servers/mcp-proxy.mjs` 是同一凭据链的复制（外加 `restBaseUrl` 字段）；上游改 `buildProxyConnection`/`buildMcpProxyConfig` 签名时两处都要改，`plugin.test.mjs` 有断言防漂移。`scripts/lib/profile-inject.mjs` 整文件 vendored，同步 = 覆盖 + 保留两行头部注释
 - 官方上游同步：`servers/` 与 `skills/` 来自 volcengine/OpenViking `agent-plugins/`，升级时整目录覆盖
+- **hook 命令四方言**：每事件同时声明 `command`/`bash`（`${PLUGIN_ROOT}`：VS Code 全平台文本展开、新版 CLI 加载时展开、bash 从 env 展开）与 `windows`/`powershell`（`$env:PLUGIN_ROOT` + 显式 `powershell -NoProfile -Command` 前缀）。根因：旧版 Copilot CLI 不做 `${PLUGIN_ROOT}` 文本展开，命令原样传给 `powershell -c` 后 PS 变量插值把 `${PLUGIN_ROOT}` 吞为空，路径退化为盘符根（`D:\scripts\hook-runner.mjs`）；VS Code Windows 的 hook 命令不经 PowerShell 执行，故 windows 方言带显式前缀。CLI 的 vwe 选择器按平台取 powershell/bash 键，`command` 键由 CLI 的 Yoe transform 复制进未显式提供的方言；超时字段必须是 `timeoutSec`——CLI 对含未知字段（如 `timeout`）的 hook 条目整体静默丢弃
 
 ## 与官方 Claude Code 插件的对照
 
@@ -55,10 +55,9 @@ docs/                            # 文档（安装/使用/排障/本文）
 | profile 注入 | SessionStart（10000 token） | SessionStart（6000 token，vendored 官方 profile-inject） |
 | 自动捕获 | Stop + PreCompact + SessionEnd | Stop + PreCompact（capture.mjs 双事件门） |
 | uri-guard | PreToolUse 拒绝/提示 | 同语义（PreToolUse deny + systemMessage；VS Code 忽略 matcher，脚本内过滤） |
-| 离线队列 | pending 目录 + 重试预算/TTL | queue.jsonl + 下次 Stop 重试（简化实现） |
 | 写 skill | ❌（MCP `write` 可写域不含 `skills/`，与所有 MCP 型 harness 一致） | ✅ 本地工具 add_skill / update_skill / validate_skill 走 REST，支持 `path` 上传本地 SKILL.md（v0.4.0） |
 | 后台任务查询 | ❌（MCP 面无 task 工具） | ✅ task_status（GET /api/v1/tasks/{id}，`ov task status` 等价） |
-| 自诊断 | ov-memory-doctor skill + 脚本 | ov-doctor.mjs（10 项，含技能 REST 接口检查） |
+| 自诊断 | ov-memory-doctor skill + 脚本 | ov-doctor.mjs（9 项，含技能 REST 接口与 Hook 命令路径检查） |
 
 未移植（有意）：SubagentStart/SubagentStop（Copilot 转录文件的子代理结构未验证）、压缩接管 takeover（VS Code 自管压缩，无接管面）、statusline（VS Code 无插件 statusline）、召回再摘要客户端压缩（服务端 context 面 max_tokens 已控注入预算，本地注入块限 8 条）。
 

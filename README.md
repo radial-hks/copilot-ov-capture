@@ -22,15 +22,15 @@ copilot plugin marketplace add radial-hks/copilot-ov-capture
 copilot plugin install openviking-copilot@openviking-team
 ```
 
-凭据（一次性）：手工创建 `%USERPROFILE%\.openviking\ovcli.conf`（`url` + `api_key`），或跑 install.ps1 代写。详见 [docs/installation.md](docs/installation.md)（CLI 市场为核心路径，VS Code 图形安装和本地安装为补充路径）。
+凭据（一次性）：手工创建 `%USERPROFILE%\.openviking\ovcli.conf`（`url` + `api_key`），格式见 [docs/installation.md](docs/installation.md)（CLI 市场为核心路径，VS Code 图形安装为补充路径）。
 
-装完自检：`node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\ov-doctor.mjs`
+装完自检：`node <插件目录>\scripts\ov-doctor.mjs`（CLI 安装的插件目录见 `copilot plugin list`，通常在 `%USERPROFILE%\.copilot\installed-plugins\openviking-team\openviking-copilot`）
 
 ## 文档
 
 | 文档 | 内容 | 读者 |
 |---|---|---|
-| [docs/installation.md](docs/installation.md) | 安装路径（Copilot CLI 市场 / VS Code 图形安装 / install.ps1）、验证清单、升级流程 | 首次安装的组员 |
+| [docs/installation.md](docs/installation.md) | 安装路径（Copilot CLI 市场 / VS Code 图形安装）、验证清单、升级流程 | 首次安装的组员 |
 | [docs/usage.md](docs/usage.md) | 自动召回/自动捕获日常使用、workspace peer、隐私边界 | 全体使用者 |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 症状→处理速查表 | 全体使用者 |
 | [docs/architecture.md](docs/architecture.md) | 架构、官方插件对照、回归链、管理员操作（开 key / 发版） | 维护者 |
@@ -39,10 +39,11 @@ copilot plugin install openviking-copilot@openviking-team
 
 - VS Code ≥ 1.102（Agent plugins + hooks 支持）；Copilot 插件策略未被组织禁用
 - Node ≥ 18（stdio 代理与上传器共用）
-- Windows / Linux / macOS：插件 hook 使用 Node + 正斜杠路径，Stop/PreCompact 捕获不依赖 PowerShell；`install.ps1` 仅作为 Windows 便捷安装器保留
+- Windows / Linux / macOS：五个 hook 命令为每个事件提供四种方言（`command`/`bash` 走 `${PLUGIN_ROOT}` 展开；`windows`/`powershell` 走 `$env:PLUGIN_ROOT` + 显式 powershell 前缀），新旧版 Copilot CLI 与 VS Code 均可正确定位 hook-runner；Stop/PreCompact 捕获用 Node 实现，不依赖 PowerShell 脚本
 
 ## 版本
 
+- 0.4.5 — 修复旧版 Copilot CLI 下 hooks 静默失效（`Cannot find module 'D:\scripts\hook-runner.mjs'`）：旧版 CLI 不做 `${PLUGIN_ROOT}` 文本展开、PowerShell 将其作变量插值为空；hooks.json 为每事件提供四方言命令（command/bash 用 `${PLUGIN_ROOT}`，windows/powershell 用 `$env:PLUGIN_ROOT` + 显式 powershell 前缀）；install.ps1 退役（标准安装流程为 CLI 市场 / VS Code 市场）；ov-doctor 新增 Hook 命令路径检查并把插件注册检查扩展到 CLI 安装路径
 - 0.4.4 — 修复 hooks 静默失效：`timeout` 字段改为 Copilot CLI 认可的 `timeoutSec`（未知字段会导致整个 hook 条目被丢弃）；hook 命令改回 `${PLUGIN_ROOT}/scripts/hook-runner.mjs` 绝对路径（CLI 执行插件 hook 时 cwd=插件目录、VS Code 时 cwd=工作区，相对路径无法两者兼容；`${PLUGIN_ROOT}` 由宿主在命令串展开并注入环境变量）
 - 0.4.3 — 官方 VS Code Agent Plugin 安装兼容：hook 命令改走 `./scripts/hook-runner.mjs`，由 runner 自定位插件根并补齐 `PLUGIN_ROOT`，避免 `${PLUGIN_ROOT}` 在 shell 命令中未注入时展开为空导致 `/scripts/*.mjs` 找不到
 - 0.4.2 — 跨平台 hook 适配：五个 hook 命令统一使用 Node + `${PLUGIN_ROOT}/...` 路径；Stop/PreCompact 改为 `capture.mjs` 入队并分离启动 uploader，Windows/Linux/macOS 均可运行自动召回、开场注入、URI 防护与自动捕获

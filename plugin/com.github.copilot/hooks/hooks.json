@@ -1,1 +1,54 @@
-{"hooks": {"SessionStart": [{"type": "command", "command": "node \"${PLUGIN_ROOT}/scripts/hook-runner.mjs\" session-start", "timeoutSec": 30}], "UserPromptSubmit": [{"type": "command", "command": "node \"${PLUGIN_ROOT}/scripts/hook-runner.mjs\" auto-recall", "timeoutSec": 25}], "PreToolUse": [{"type": "command", "command": "node \"${PLUGIN_ROOT}/scripts/hook-runner.mjs\" uri-guard", "timeoutSec": 10}], "PreCompact": [{"type": "command", "command": "node \"${PLUGIN_ROOT}/scripts/hook-runner.mjs\" capture", "timeoutSec": 30}], "Stop": [{"type": "command", "command": "node \"${PLUGIN_ROOT}/scripts/hook-runner.mjs\" capture", "timeoutSec": 30}]}}
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "node \"${PLUGIN_ROOT}/scripts/hook-runner.mjs\" session-start",
+        "windows": "powershell -NoProfile -Command \"node $env:PLUGIN_ROOT/scripts/hook-runner.mjs\" session-start",
+        "powershell": "powershell -NoProfile -Command \"node $env:PLUGIN_ROOT/scripts/hook-runner.mjs\" session-start",
+        "bash": "node \"${PLUGIN_ROOT}/scripts/hook-runner.mjs\" session-start",
+        "timeoutSec": 30
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "command": "node \"${PLUGIN_ROOT}/scripts/hook-runner.mjs\" auto-recall",
+        "windows": "powershell -NoProfile -Command \"node $env:PLUGIN_ROOT/scripts/hook-runner.mjs\" auto-recall",
+        "powershell": "powershell -NoProfile -Command \"node $env:PLUGIN_ROOT/scripts/hook-runner.mjs\" auto-recall",
+        "bash": "node \"${PLUGIN_ROOT}/scripts/hook-runner.mjs\" auto-recall",
+        "timeoutSec": 25
+      }
+    ],
+    "PreToolUse": [
+      {
+        "type": "command",
+        "command": "node \"${PLUGIN_ROOT}/scripts/hook-runner.mjs\" uri-guard",
+        "windows": "powershell -NoProfile -Command \"node $env:PLUGIN_ROOT/scripts/hook-runner.mjs\" uri-guard",
+        "powershell": "powershell -NoProfile -Command \"node $env:PLUGIN_ROOT/scripts/hook-runner.mjs\" uri-guard",
+        "bash": "node \"${PLUGIN_ROOT}/scripts/hook-runner.mjs\" uri-guard",
+        "timeoutSec": 10
+      }
+    ],
+    "PreCompact": [
+      {
+        "type": "command",
+        "command": "node \"${PLUGIN_ROOT}/scripts/hook-runner.mjs\" capture",
+        "windows": "powershell -NoProfile -Command \"node $env:PLUGIN_ROOT/scripts/hook-runner.mjs\" capture",
+        "powershell": "powershell -NoProfile -Command \"node $env:PLUGIN_ROOT/scripts/hook-runner.mjs\" capture",
+        "bash": "node \"${PLUGIN_ROOT}/scripts/hook-runner.mjs\" capture",
+        "timeoutSec": 30
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node \"${PLUGIN_ROOT}/scripts/hook-runner.mjs\" capture",
+        "windows": "powershell -NoProfile -Command \"node $env:PLUGIN_ROOT/scripts/hook-runner.mjs\" capture",
+        "powershell": "powershell -NoProfile -Command \"node $env:PLUGIN_ROOT/scripts/hook-runner.mjs\" capture",
+        "bash": "node \"${PLUGIN_ROOT}/scripts/hook-runner.mjs\" capture",
+        "timeoutSec": 30
+      }
+    ]
+  }
+}

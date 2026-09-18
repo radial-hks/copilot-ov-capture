@@ -31,14 +31,13 @@ copilot plugin list
 >
 > CLI 装的插件（`~/.copilot/installed-plugins/`）VS Code 会**自动发现**，两边共用——无需重复安装。
 
-**装完插件本体后，还差凭据**（MCP/捕获上传器需要）：
+**装完插件本体后，还差凭据**（MCP/捕获上传器需要）。手工创建 `%USERPROFILE%\.openviking\ovcli.conf`：
 
 ```powershell
-# 手工创建 %USERPROFILE%\.openviking\ovcli.conf，内容：
 { "url": "<your-openviking-server-url>", "api_key": "<你的user-key>" }
 ```
 
-或跑一次 install.ps1 只为写凭据（`-ApiKey` 参数）。
+> 记事本另存为 UTF-8 无 BOM（Node 的 `JSON.parse` 对 BOM 敏感）；该文件含个人凭据，**不进任何 git 仓库**。
 
 ### 路径 2：VS Code 图形安装（补充路径）
 
@@ -56,42 +55,20 @@ VS Code 原生支持仓库市场——settings.json 加一行，之后全程图�
 
 > 私有仓库同样支持：公开查找失败时 VS Code 会回退直接 clone（需本机 GitHub 凭据）。本仓库当前为公开。
 
-**装完插件本体后，还差凭据**（MCP/捕获上传器需要）：
+**装完插件本体后，同样需要凭据**（见路径 1 末尾的 `ovcli.conf` 格式）。
+
+## 安装后验证
 
 ```powershell
-# 手工创建 %USERPROFILE%\.openviking\ovcli.conf，内容：
-{ "url": "<your-openviking-server-url>", "api_key": "<你的user-key>" }
-```
-
-或跑一次 install.ps1 只为写凭据（`-ApiKey` 参数）。
-
-### 路径 3：install.ps1（Windows 全自动一键装，适合不想碰 settings.json 的组员）
-
-- **插件包**：`git clone` 本仓库（或 zip 解压）到任意目录，如 `D:\tools\copilot-ov-capture`
-- **你的 user key**：找管理员开通
-
-```powershell
-cd <仓库目录>
-powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -ApiKey <你的user-key> -ServerUrl <你的-openviking-server-url>
-```
-
-Windows 安装器做三件事（幂等，可重复运行）：
-- 拷贝插件到 `%USERPROFILE%\.openviking\copilot-ov-plugin`
-- 写凭据 `%USERPROFILE%\.openviking\ovcli.conf`（`url` + `api_key`；MCP 代理与捕获上传器共用，**不进任何 git 仓库**）
-- 合并 VS Code **用户级** settings.json：`chat.plugins.enabled: true` + `chat.pluginLocations` 指向插件目录（自动探测真实 user-data 目录，含自定义 `--user-data-dir` 场景）
-
-> 三条路径都需要凭据。路径 1/2 装完插件本体后，务必补 `ovcli.conf`（见路径 1 末尾）。
-
-## 安装后验证（两条命令）
-
-```powershell
-# Windows：一键自诊断（Node/凭据/连通/鉴权/peer/捕获管线/VS Code 注册等）
-node %USERPROFILE%\.openviking\copilot-ov-plugin\scripts\ov-doctor.mjs
+# Windows：一键自诊断（Node/凭据/连通/鉴权/技能接口/peer/捕获管线/插件注册/Hook 命令路径）
+node "<插件目录>\scripts\ov-doctor.mjs"
+# CLI 安装的插件目录通常在：
+node "%USERPROFILE%\.copilot\installed-plugins\openviking-team\openviking-copilot\scripts\ov-doctor.mjs"
 ```
 
 ```bash
 # Linux/macOS：市场安装后按实际插件目录运行 doctor
-node ~/.openviking/copilot-ov-plugin/scripts/ov-doctor.mjs
+node ~/.copilot/installed-plugins/openviking-team/openviking-copilot/scripts/ov-doctor.mjs
 ```
 
 应全绿。然后：
@@ -112,11 +89,11 @@ node ~/.openviking/copilot-ov-plugin/scripts/ov-doctor.mjs
 
 ## 更新插件
 
-```powershell
-cd <仓库目录> && git pull
-# 路径 1 用户：重装即升级（缓存陷阱——不重装不生效）
+```bash
+# 路径 1（CLI 安装）：重装即升级（CLI 有缓存陷阱——不重装不生效）
 copilot plugin install openviking-copilot@openviking-team
-# 路径 2 用户：界面自动检查（24h 周期）；手动触发用 Ctrl+Shift+P → Extensions: Check for Extension Updates，有新版点 Update
-# 路径 3 用户：重新运行 install.ps1（会覆盖插件目录，凭据与 settings 合并保留）
-powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -ApiKey <你的user-key> -ServerUrl <你的-openviking-server-url>
+```
+
+```text
+路径 2（VS Code 市场）：界面自动检查（24h 周期）；手动触发用 Ctrl+Shift+P → Extensions: Check for Extension Updates，有新版点 Update
 ```
