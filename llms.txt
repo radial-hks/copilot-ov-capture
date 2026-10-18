@@ -1,14 +1,15 @@
-# copilot-ov-capture — LLM 安装/排障指令
+# copilot-ov-capture — LLM 安装/升级/排障指令
 
 > 本文件给 AI 助手（Copilot / 其他 LLM agent）阅读。用户对你说"帮我装这个插件"时，按本文流程执行。
 > 所有文档在 docs/ 目录：installation.md（安装）、usage.md（使用）、troubleshooting.md（排障）、architecture.md（维护）。
 
 ## 你需要知道的前提
 
-- 这是一个 GitHub Copilot 插件（Agent Plugins 1.0 格式），提供 OpenViking 团队记忆集成
+- 这是一个 GitHub Copilot 插件（Agent Plugins 1.0 格式），提供 OpenViking 团队记忆集成；插件名 `openviking-copilot`
 - 目标环境：Windows / Linux / macOS + VS Code（≥1.102）+ Node ≥18；公司 Copilot 无插件策略限制
 - 团队 OpenViking 服务器：内网地址，由管理员随 user key 一并私发（流程第 4 步向用户索要）
 - **凭据是敏感信息**：每个成员有私发的 user key 和团队服务器地址（管理员会一并私发）。这两样你都不知道——安装过程中必须停下来向用户索要（见流程第 4 步的暂停点）。绝不要编造、留空占位符或跳过
+- 当前发布版：v0.5.0。短会话默认可能只上传 pending，不立即归档抽取；这是预期行为，不是捕获失败
 
 ## 安装流程（推荐：Copilot CLI 市场安装）
 
@@ -80,13 +81,25 @@ CLI 安装后的插件目录会被 VS Code 自动发现。让用户在 VS Code �
 node "%USERPROFILE%\.copilot\installed-plugins\openviking-team\openviking-copilot\scripts\ov-doctor.mjs"
 ```
 
+```bash
+node ~/.copilot/installed-plugins/openviking-team/openviking-copilot/scripts/ov-doctor.mjs
+```
+
 > 若路径不存在（CLI 版本目录结构差异），先跑 `copilot plugin list` 找到插件目录再对路径运行 doctor。
 
-逐项解读输出（9 项体检，PASS/FAIL 带修复提示）：
+逐项解读输出（12 项体检，PASS/FAIL 带修复提示）：
 - 有 FAIL → 按 FAIL 项的"修复"提示处理；处理后重跑 doctor
 - `插件注册` 项已兼容 CLI 市场安装路径——CLI 装的用户 doctor 会显示 `CLI 安装于 ...`；VS Code 市场安装用户显示 pluginLocations/marketplaces 状态
 - `Hook 命令路径` 项必须 PASS——FAIL 说明 hooks.json 被改写或安装了旧版本（升级插件后重跑）
-- 全绿 → 安装完成。告诉用户：新开 Copilot 会话随便问个问题（如"帮我回顾之前做过的类似功能"），之后可以用了
+- `配置项` 项会显示 `skillCatalog`、`bypassSession`、`commitTokenThreshold` 等解析结果
+- 全绿后继续做一次实机 smoke：
+  1. VS Code：`Ctrl+Shift+P` → `Developer: Reload Window`
+  2. 新开 Copilot 会话，问一个和团队历史相关的问题，如"帮我回顾之前做过的类似功能"
+  3. 会话结束后查看上传日志：
+     - Windows：`Get-Content %USERPROFILE%\.openviking\copilot-capture\uploader.log -Tail 5`
+     - Linux/macOS：`tail -n 5 ~/.openviking/copilot-capture/uploader.log`
+  4. 预期看到 `session <id>: +N messages, pending (below commit threshold)` 或 `session <id>: +N messages, committed`
+  5. Studio 打开 `<your-openviking-server-url>/studio`，Sessions 页可看到 `import__copilot__<会话id>`
 
 ## 常见问题（详见 docs/troubleshooting.md）
 
@@ -96,6 +109,8 @@ node "%USERPROFILE%\.copilot\installed-plugins\openviking-team\openviking-copilo
 | 搜不到 @agentPlugins 或无 openviking-copilot | CLI 用户先看 `copilot plugin list`；图形安装用户确认 settings.json 的 marketplaces 行已保存且 Reload Window 过 |
 | doctor 报 401 / key 无效 | key 抄错或失效 → 让用户和管理员核对，重写 ovcli.conf |
 | doctor 报服务不通 | `curl <your-openviking-server-url>/health`；内网/VPN 问题 |
+| uploader.log 显示 `pending (below commit threshold)`，Studio 暂时没新记忆 | v0.5.0 起普通 Stop 低于 `commitTokenThreshold`（默认 20000）只上传 pending，不立即归档抽取；等待累计跨阈值、触发 PreCompact，或手动 `node "<插件目录>\scripts\uploader.mjs" --session <会话id> --commit` |
+| Copilot 误把 `viking://...` 当成本地文件读写 | v0.5.0 的 URI guard 会拒绝并提示改用 openviking MCP 工具；让 Copilot 调 `read`/`find`/`search` 等 OpenViking 工具 |
 | 改了插件不生效 | VS Code：Check for Extension Updates；CLI 装的需重装（缓存陷阱） |
 
 ## 升级
@@ -104,8 +119,18 @@ CLI 安装用户：重跑 `copilot plugin install openviking-copilot@openviking-
 
 VS Code 图形安装用户：VS Code 每 24h 自动检查，界面点 Update 即可；手动触发 `Extensions: Check for Extension Updates`。
 
+升级后立刻跑 `ov-doctor`，确认 `Hook 命令路径` 与 `配置项` 都 PASS。短会话只出现 pending 时不要误判失败；需要马上触发归档时用手动 `--commit`。
+
+## 给维护者/管理员
+
+- 发布前按 docs/architecture.md 的 release checklist 跑：`node plugin/plugin.test.mjs`、脚本语法检查、JSON/版本一致性、secret scan、`git diff --check`
+- 有真实 OpenViking 服务和凭据时，加跑 `node plugin/scripts/e2e-live.mjs`；它会验证 health/auth/upload/session/commit，并清理测试会话
+- `plugin/scripts/lib/config-schema.mjs` 是配置单一真源；新增 knob 时在 schema 里声明 type/default/range/env/confKey/alias
+- `plugin/servers/`、`plugin/servers/shared/`、`plugin/scripts/lib/profile-inject.mjs`、`plugin/skills/` 含上游同步内容；修改前看 docs/architecture.md 的上游同步说明，避免盲目覆盖本地差异
+- `add_skill` 由服务端 MCP 原生提供；本地只补 `update_skill`、`validate_skill`、`task_status`
+
 ## 边界
 
-- 不要修改仓库的 servers/ 和 skills/（官方上游同步目录）
-- 不要把本仓库的文档/结构当成其他用途的模板复制——AGPL-3.0，引用需守许可证
+- 不要把 workspace `.openviking/config.json` 当凭据文件；里面只能放 peer 配置，url/api_key 永远放用户级 `ovcli.conf`
+- 不要把本仓库的文档/结构当成其他用途的模板复制；当前许可证为 Apache-2.0，复用需遵守 LICENSE/NOTICE
 - 排障超出本文范围时，让用户跑 doctor 并把输出发给团队管理员，不要自己猜测服务器端问题
