@@ -13,6 +13,13 @@ itself licensed under the Apache License, Version 2.0:
       <available-skills> catalog and the buildProfileBlock options param; only
       the local two-line header comment is prepended).
 
+  plugin/scripts/lib/uri-guard.mjs
+    - Source: examples/memory-plugin-shared/lib/uri-guard.mjs
+    - Status: unmodified (verbatim body re-synced 2026-10-18; only the local
+      two-line header comment is prepended). Supplies the tool-specific guard
+      message/notice builders and the skill-URI redirect helpers used by the
+      PreToolUse hook.
+
   plugin/servers/shared/credentials.mjs
     - Source: examples/memory-plugin-shared/lib/credentials.mjs
       (as synced into agent-plugins/servers/shared/)

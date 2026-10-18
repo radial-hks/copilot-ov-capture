@@ -474,16 +474,24 @@ test("skill tool provider: update_skill `path` uploads the local file via temp_u
 test("uri-guard: denies file tools with viking:// paths, hints on terminal, passes MCP tools", async () => {
   const { decideUriGuard } = await importPluginModule("scripts", "uri-guard.mjs");
 
-  // File tool with a viking:// path -> deny with MCP redirection.
+  // File tool with a viking:// path -> deny with the tool-specific equivalent.
   const denied = decideUriGuard({ tool_name: "read_file", tool_input: { filePath: "viking://user/alice/memories/pr.md" } });
   assert.equal(denied.hookSpecificOutput.permissionDecision, "deny");
-  assert.match(denied.hookSpecificOutput.permissionDecisionReason, /openviking MCP tools/);
+  assert.match(denied.hookSpecificOutput.permissionDecisionReason, /openviking_read/);
+  assert.match(denied.hookSpecificOutput.permissionDecisionReason, /viking:\/\/user\/alice\/memories\/pr\.md/);
 
-  // snake_case path keys and other path-like keys are covered too.
-  assert.equal(
-    decideUriGuard({ tool_name: "create_file", tool_input: { file_path: "viking://user/alice/skills/x/SKILL.md" } })?.hookSpecificOutput?.permissionDecision,
-    "deny",
-  );
+  // write/edit aimed at a skill URI -> redirect to openviking_add_skill.
+  const skillDenied = decideUriGuard({ tool_name: "create_file", tool_input: { file_path: "viking://user/alice/skills/x/SKILL.md" } });
+  assert.equal(skillDenied.hookSpecificOutput.permissionDecision, "deny");
+  assert.match(skillDenied.hookSpecificOutput.permissionDecisionReason, /openviking_add_skill/);
+
+  // write aimed at a non-skill URI -> openviking_write.
+  const writeDenied = decideUriGuard({ tool_name: "create_file", tool_input: { file_path: "viking://user/alice/memories/note.md" } });
+  assert.match(writeDenied.hookSpecificOutput.permissionDecisionReason, /openviking_write/);
+
+  // unknown file tool still denied (generic message), never left open.
+  const unknownDenied = decideUriGuard({ tool_name: "some_file_tool", tool_input: { file_path: "viking://user/alice/x.md" } });
+  assert.equal(unknownDenied.hookSpecificOutput.permissionDecision, "deny");
 
   // openviking MCP tools take viking:// URIs by design -> untouched.
   assert.equal(decideUriGuard({ tool_name: "openviking_read", tool_input: { uri: "viking://user/alice/memories/x.md" } }), null);
@@ -491,10 +499,11 @@ test("uri-guard: denies file tools with viking:// paths, hints on terminal, pass
   // Search pattern text is never a path -> untouched.
   assert.equal(decideUriGuard({ tool_name: "grep_search", tool_input: { pattern: "viking://usage in docs" } }), null);
 
-  // Terminal command embedding a viking:// string -> allowed with a hint.
+  // Terminal command embedding a viking:// string -> allowed with a notice.
   const hinted = decideUriGuard({ tool_name: "runTerminalCommand", tool_input: { command: "curl http://ov/api/v1/content/read?uri=viking://user/a/x.md" } });
   assert.equal(hinted.hookSpecificOutput, undefined);
   assert.match(hinted.systemMessage, /not local files/);
+  assert.match(hinted.systemMessage, /openviking_read/);
 
   // No viking:// anywhere -> untouched.
   assert.equal(decideUriGuard({ tool_name: "read_file", tool_input: { filePath: "/home/user/repo/src/main.ts" } }), null);
