@@ -18,10 +18,12 @@ plugin/                          # Agent Plugins 1.0 包（分发单元）
 │   ├── capture.mjs              # Stop/PreCompact hook（跨平台 Node）：入队→分离启动 uploader
 │   ├── hook-runner.mjs          # hook 入口分发（自算 PLUGIN_ROOT；capture.ps1 为旧版遗留，见下）
 │   ├── uploader.mjs             # 游标增量解析 transcript→提取文本→OV 会话 API
-│   ├── ov-doctor.mjs            # 9 项自诊断（含 Hook 命令路径检查）
+│   ├── ov-doctor.mjs            # 12 项自诊断（含配置项 / Hook 命令路径检查）
 │   └── lib/
-│       ├── ov-common.mjs        # hook 共享：配置链 + workspace peer + fetchJSON
-│       └── profile-inject.mjs   # 官方共享层 vendored（上游整文件覆盖同步）
+│       ├── config-schema.mjs    # 配置单一真源：knob 声明（type/default/range/env/旧拼写）+ resolveSettings + validateConfig
+│       ├── ov-common.mjs        # hook 共享：readConfig（→ resolveSettings）+ workspace peer + isBypassed + fetchJSON
+│       ├── profile-inject.mjs   # 官方共享层 vendored（上游整文件覆盖同步）
+│       └── uri-guard.mjs        # 官方共享层 vendored（guard 消息/通知 + skill URI 重定向助手）
 └── com.github.copilot/
     └── hooks/hooks.json         # 五事件，每事件四方言命令（见设计要点）
 

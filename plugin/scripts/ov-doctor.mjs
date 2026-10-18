@@ -17,6 +17,7 @@ import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { resolveSettings, validateConfig } from "./lib/config-schema.mjs";
 
 const results = [];
 function check(name, ok, detail, fix) {
@@ -219,8 +220,18 @@ const PLUGIN_ROOT_DIR = dirname(fileURLToPath(import.meta.url)) ? join(dirname(f
     "hooks.json 损坏、被改写或安装了 ≤0.4.5 旧版——重新安装插件（见 docs/installation.md；CLI 有缓存陷阱，重装才会覆盖）");
 }
 
+// 8. config knobs (schema-validated)
+try {
+  const settings = resolveSettings();
+  const warnings = validateConfig(settings);
+  check("配置项", warnings.length === 0,
+    `skillCatalog=${settings.skillCatalog}, skillCatalogTokenBudget=${settings.skillCatalogTokenBudget}, bypassSession=${settings.bypassSession}, commitTokenThreshold=${settings.commitTokenThreshold}`,
+    warnings.join("; "));
+} catch (e) {
+  check("配置项", false, e.message, "");
+}
+
 // report
-const W = 22;
 console.log("\nOpenViking Copilot 插件自诊断");
 console.log("=".repeat(60));
 for (const r of results) {

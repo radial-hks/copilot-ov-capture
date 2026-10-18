@@ -596,6 +596,39 @@ test("uploader defers commit below threshold and honors --commit", async () => {
   }
 });
 
+test("config-schema resolves env/conf with defaults, aliases and range clamps", async () => {
+  const { resolveSettings, validateConfig } = await importPluginModule("scripts", "lib", "config-schema.mjs");
+  const def = resolveSettings({ env: {}, conf: {} });
+  assert.equal(def.skillCatalog, true);
+  assert.equal(def.skillCatalogTokenBudget, 1200);
+  assert.equal(def.bypassSession, false);
+  assert.deepEqual(def.bypassSessionPatterns, []);
+  assert.equal(def.commitTokenThreshold, 20000);
+
+  // env wins over conf; CSV list + int clamp + trailing-slash trim.
+  const resolved = resolveSettings({
+    env: {
+      OPENVIKING_SKILL_CATALOG: "0",
+      OPENVIKING_SKILL_CATALOG_TOKEN_BUDGET: "999999", // above max 20000 -> clamp
+      OPENVIKING_BYPASS_SESSION_PATTERNS: "/tmp/scratch, /var/cache",
+    },
+    conf: { url: "http://x:1933/", api_key: "k", plugin: { skillCatalog: true, commitTokenThreshold: 500 } },
+  });
+  assert.equal(resolved.skillCatalog, false);
+  assert.equal(resolved.skillCatalogTokenBudget, 20000);
+  assert.deepEqual(resolved.bypassSessionPatterns, ["/tmp/scratch", "/var/cache"]);
+  assert.equal(resolved.commitTokenThreshold, 500); // conf, no env
+  assert.equal(resolved.url, "http://x:1933");
+  assert.equal(resolved.apiKey, "k");
+
+  // Older spelling bypassPatterns still resolves in the plugin section.
+  assert.deepEqual(resolveSettings({ env: {}, conf: { plugin: { bypassPatterns: ["/a"] } } }).bypassSessionPatterns, ["/a"]);
+
+  // validateConfig flags out-of-range ints.
+  assert.deepEqual(validateConfig(def), []);
+  assert.equal(validateConfig({ commitTokenThreshold: 0 }).length, 1);
+});
+
 test("hooks.json wires the full five-event hook face", () => {
   const hooks = JSON.parse(readFileSync(join(PLUGIN_ROOT, "com.github.copilot", "hooks", "hooks.json"), "utf8")).hooks;
   const events = Object.keys(hooks);

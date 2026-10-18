@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { resolveSettings } from "./lib/config-schema.mjs";
 
 const HARNESS = "copilot";
 const OV_SESSION_PREFIX = `import__${HARNESS}__`;
@@ -42,24 +43,11 @@ const SESSION_STATE_ROOT = join(homedir(), ".copilot", "session-state");
 // ---------------------------------------------------------------- config ---
 
 function readConfig() {
-  let url = process.env.OPENVIKING_URL || "";
-  let apiKey = process.env.OPENVIKING_API_KEY || "";
-  let conf = {};
-  const confPath = process.env.OPENVIKING_CLI_CONFIG_FILE
-    || join(homedir(), ".openviking", "ovcli.conf");
-  try { conf = JSON.parse(readFileSync(confPath, "utf8")) || {}; } catch { /* fall through */ }
-  url = url || conf.url || "";
-  apiKey = apiKey || conf.api_key || "";
-  if (!url || !apiKey) {
-    throw new Error(`No OpenViking credentials: set OPENVIKING_URL/OPENVIKING_API_KEY or ${confPath}`);
+  const cfg = resolveSettings();
+  if (!cfg.url || !cfg.apiKey) {
+    throw new Error(`No OpenViking credentials: set OPENVIKING_URL/OPENVIKING_API_KEY or ${join(homedir(), ".openviking", "ovcli.conf")}`);
   }
-  const plugin = conf.plugin && typeof conf.plugin === "object" ? conf.plugin : {};
-  const harness = plugin.agent_plugins && typeof plugin.agent_plugins === "object" ? plugin.agent_plugins : {};
-  const rawThreshold = process.env.OPENVIKING_COMMIT_TOKEN_THRESHOLD !== undefined && process.env.OPENVIKING_COMMIT_TOKEN_THRESHOLD !== ""
-    ? Number(process.env.OPENVIKING_COMMIT_TOKEN_THRESHOLD)
-    : Number(harness.commitTokenThreshold ?? plugin.commitTokenThreshold ?? 20000);
-  const commitTokenThreshold = Number.isFinite(rawThreshold) && rawThreshold > 0 ? rawThreshold : 20000;
-  return { url: url.replace(/\/+$/, ""), apiKey, commitTokenThreshold };
+  return cfg;
 }
 
 function log(...args) {
