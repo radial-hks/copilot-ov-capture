@@ -15,7 +15,7 @@ import { resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildProxyConnection } from "../servers/shared/credentials.mjs";
 import { createLogger } from "../servers/shared/debug-log.mjs";
-import { buildMcpProxyConfig, resolveMcpActorPeerId, trimSlash } from "../servers/shared/mcp-proxy-config.mjs";
+import { toMcpProxyConfig, trimSlash } from "../servers/shared/mcp-proxy-config.mjs";
 import { createOpenVikingMcpProxy } from "../servers/shared/mcp-proxy-core.mjs";
 import { createSkillToolProvider } from "./skill-tools.mjs";
 
@@ -23,22 +23,7 @@ function readProxyConfig() {
   const cfg = buildProxyConnection("agent-plugins", {
     manifestUrl: new URL("../plugin.json", import.meta.url),
   });
-  const shaped = buildMcpProxyConfig({
-    baseUrl: cfg.baseUrl,
-    mcpUrl: cfg.mcpUrl,
-    apiKey: cfg.apiKey,
-    account: cfg.account,
-    user: cfg.user,
-    sendIdentityHeaders: cfg.sendIdentityHeaders,
-    peerId: resolveMcpActorPeerId(cfg),
-    userAgent: cfg.userAgent,
-    timeoutMs: cfg.timeoutMs,
-    debug: cfg.debug,
-    debugLogPath: cfg.debugLogPath,
-    credentialSource: cfg.credentialSource,
-    credentialPath: cfg.credentialPath,
-    watchedPaths: cfg.watchedPaths,
-  });
+  const shaped = toMcpProxyConfig(cfg);
   // The shaped config only carries mcpUrl; the local REST tools need the API base.
   shaped.restBaseUrl = trimSlash(cfg.baseUrl);
   return shaped;

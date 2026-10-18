@@ -13,30 +13,40 @@ itself licensed under the Apache License, Version 2.0:
 
   plugin/servers/shared/credentials.mjs
     - Source: examples/memory-plugin-shared/lib/credentials.mjs
-    - Local modifications: harness-agnostic ov.conf section resolution
-      (harnessSection), explicit fetch timeout constants, and related
-      credential-path handling for non-Claude/Codex harnesses.
+      (as synced into agent-plugins/servers/shared/)
+    - Status: verbatim upstream (re-synced 2026-10-18). The previous local
+      "harness-agnostic ov.conf section" divergence was subsumed by upstream's
+      `sectionKey()`/`pluginSection()` refactor, which handles an empty harness
+      identically.
 
   plugin/servers/shared/mcp-proxy-config.mjs
     - Source: examples/memory-plugin-shared/lib/mcp-proxy-config.mjs
-    - Local modifications: OPENVIKING_EXTRA_HEADERS environment-variable
-      support for gateway deployments requiring custom request headers.
+      (as synced into agent-plugins/servers/shared/)
+    - Status: verbatim upstream. The previous local OPENVIKING_EXTRA_HEADERS
+      support is now upstream-native via `parseExtraHeaders()`; no local delta
+      remains.
 
   plugin/servers/shared/mcp-proxy-core.mjs
     - Source: examples/memory-plugin-shared/lib/mcp-proxy-core.mjs
-    - Local modifications: minor divergence from the upstream copy at the
-      time of vendoring; to be reconciled with upstream during the planned
-      memory-plugin-shared integration (see docs/architecture.md).
+      (as synced into agent-plugins/servers/shared/)
+    - Status: verbatim upstream. The previous local `split(/\r?\n/)` divergence
+      was superseded by upstream's `split(/\r\n|\r|\n/)`.
+
+  plugin/servers/shared/ov-http.mjs
+    - Source: examples/memory-plugin-shared/lib/ov-http.mjs
+      (as synced into agent-plugins/servers/shared/)
+    - Status: verbatim upstream. This module was formerly authored locally with
+      OPENVIKING_EXTRA_HEADERS support; upstream has since added an equivalent
+      `ov-http.mjs` (parseExtraHeaders + non-JSON 2xx detection), so the local
+      copy is replaced by the upstream one.
 
   plugin/servers/shared/debug-log.mjs
     - Source: examples/memory-plugin-shared/lib/debug-log.mjs
-    - Status: unmodified.
-
-The following file carries a "GENERATED" header for consistency with the
-vendored set but is authored in this repository (no upstream counterpart):
-
-  plugin/servers/shared/ov-http.mjs
+    - Status: verbatim upstream.
 
 Upstream files are vendored because the Copilot plugin marketplace requires
 self-contained plugin bundles. Resync procedure and drift policy are
-documented in docs/architecture.md.
+documented in docs/architecture.md. The proxy entry under plugin/servers/ and
+plugin/local-tools/ consumes these modules through the stable upstream API
+(`buildProxyConnection`, `toMcpProxyConfig`, `createOpenVikingMcpProxy`,
+`buildOvHeaders`).

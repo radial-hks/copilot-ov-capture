@@ -1,4 +1,4 @@
-// Vendored from examples/memory-plugin-shared/lib (volcengine/OpenViking) with local modifications. See NOTICE for the delta; do not blind-resync.
+// GENERATED FROM examples/memory-plugin-shared/lib. DO NOT EDIT.
 /**
  * Shared stdio -> streamable-HTTP MCP proxy core for OpenViking memory plugins.
  *
@@ -102,7 +102,7 @@ function parseSseMessages(text) {
     messages.push(JSON.parse(data));
   }
 
-  for (const rawLine of String(text || "").split(/\r?\n/)) {
+  for (const rawLine of String(text || "").split(/\r\n|\r|\n/)) {
     if (rawLine === "") {
       flush();
       continue;
