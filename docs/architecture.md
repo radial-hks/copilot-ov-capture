@@ -19,6 +19,7 @@ plugin/                          # Agent Plugins 1.0 包（分发单元）
 │   ├── hook-runner.mjs          # hook 入口分发（自算 PLUGIN_ROOT；capture.ps1 为旧版遗留，见下）
 │   ├── uploader.mjs             # 游标增量解析 transcript→提取文本→OV 会话 API
 │   ├── ov-doctor.mjs            # 12 项自诊断（含配置项 / Hook 命令路径检查）
+│   ├── e2e-live.mjs             # 真实服务端 live E2E 门（健康/鉴权 → 捕获上传+commit → 续跑 overview → 清理）
 │   └── lib/
 │       ├── config-schema.mjs    # 配置单一真源：knob 声明（type/default/range/env/旧拼写）+ resolveSettings + validateConfig
 │       ├── ov-common.mjs        # hook 共享：readConfig（→ resolveSettings）+ workspace peer + isBypassed + fetchJSON
@@ -87,6 +88,7 @@ node <插件目录>\scripts\uploader.mjs --session <会话id> --dry-run
 5. 幂等回归：重跑 uploader 应 `no new events`
 6. ov-doctor 全绿
 7. 端到端：模拟 Stop 事件进 capture.mjs → 队列入队 → 分离 uploader 清空队列
+8. `node plugin/scripts/e2e-live.mjs`（真实服务端 live E2E：健康/鉴权 → 合成 transcript 上传+commit → 验证落盘/归档 → 续跑 overview → 自动清理测试会话；步骤 3-5 的自动化版，发版前必跑）
 
 ## 管理员操作
 
