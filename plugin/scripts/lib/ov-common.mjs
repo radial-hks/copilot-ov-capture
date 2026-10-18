@@ -16,18 +16,36 @@ import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 
+function envFlag(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const v = raw.trim().toLowerCase();
+  if (v === "1" || v === "true" || v === "yes" || v === "on") return true;
+  if (v === "0" || v === "false" || v === "no" || v === "off") return false;
+  return fallback;
+}
+
 export function readConfig() {
   let url = process.env.OPENVIKING_URL || "";
   let apiKey = process.env.OPENVIKING_API_KEY || "";
-  if (!url || !apiKey) {
-    const confPath = process.env.OPENVIKING_CLI_CONFIG_FILE || join(homedir(), ".openviking", "ovcli.conf");
-    try {
-      const conf = JSON.parse(readFileSync(confPath, "utf8"));
-      url = url || conf.url || "";
-      apiKey = apiKey || conf.api_key || "";
-    } catch { /* error below */ }
-  }
-  return { url: (url || "").replace(/\/+$/, ""), apiKey };
+  let conf = {};
+  const confPath = process.env.OPENVIKING_CLI_CONFIG_FILE || join(homedir(), ".openviking", "ovcli.conf");
+  try { conf = JSON.parse(readFileSync(confPath, "utf8")) || {}; } catch { /* absent */ }
+  url = url || conf.url || "";
+  apiKey = apiKey || conf.api_key || "";
+
+  // plugin knobs: shared `plugin` scalars, then the `plugin.agent_plugins`
+  // harness section over them; env vars win over both.
+  const plugin = conf.plugin && typeof conf.plugin === "object" ? conf.plugin : {};
+  const harness = plugin.agent_plugins && typeof plugin.agent_plugins === "object" ? plugin.agent_plugins : {};
+  const pick = (key, def) => (harness[key] !== undefined ? harness[key] : plugin[key] !== undefined ? plugin[key] : def);
+  const skillCatalog = envFlag("OPENVIKING_SKILL_CATALOG", pick("skillCatalog", true));
+  const rawBudget = process.env.OPENVIKING_SKILL_CATALOG_TOKEN_BUDGET !== undefined && process.env.OPENVIKING_SKILL_CATALOG_TOKEN_BUDGET !== ""
+    ? Number(process.env.OPENVIKING_SKILL_CATALOG_TOKEN_BUDGET)
+    : Number(pick("skillCatalogTokenBudget", 1200));
+  const skillCatalogTokenBudget = Number.isFinite(rawBudget) && rawBudget >= 0 ? rawBudget : 1200;
+
+  return { url: (url || "").replace(/\/+$/, ""), apiKey, skillCatalog, skillCatalogTokenBudget };
 }
 
 export function safePeerId(raw) {

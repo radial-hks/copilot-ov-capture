@@ -5,10 +5,12 @@
  *
  * Port of the official Claude Code plugin's session-start behavior: at the
  * first prompt of a session, inject the user's profile.md plus a compact
- * listing of available preference/entity memories as <openviking-context>,
- * so Copilot starts with "who the user is / what is known about them" —
- * the same block 9 of the official harness integrations build via the
- * shared profile-inject module (vendored at lib/profile-inject.mjs).
+ * listing of available preference/entity memories — and, when the
+ * skillCatalog knob is on, the <available-skills> catalog (own skills first,
+ * account-shared next, same-name dedup) — as <openviking-context>, so
+ * Copilot starts with "who the user is / what is known about them" — the
+ * same block the official harness integrations build via the shared
+ * profile-inject module (vendored at lib/profile-inject.mjs).
  *
  * VS Code hook contract: reads the SessionStart JSON from stdin, writes
  * { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext } }
@@ -16,7 +18,8 @@
  * never blocked.
  *
  * Budget: 6000 tokens (the official thin-hook tier), CJK-aware via the
- * vendored estimator.
+ * vendored estimator. The skill catalog is budgeted separately
+ * (skillCatalogTokenBudget, default 1200) and toggled by skillCatalog.
  */
 
 import { fileURLToPath } from "node:url";
@@ -38,7 +41,10 @@ export async function runSessionStart(ev = {}) {
   const fetchJSON = makeFetchJSON(cfg, { peerId: peer });
 
   try {
-    const built = await buildProfileBlock(fetchJSON, BUDGET_TOKENS, peer);
+    const built = await buildProfileBlock(fetchJSON, BUDGET_TOKENS, peer, {
+      skillCatalog: cfg.skillCatalog,
+      skillCatalogTokenBudget: cfg.skillCatalogTokenBudget,
+    });
     if (!built || !built.block) return {};
     const context = `<openviking-context source="session-start" peer="${peer || "user-level"}">\n`
       + `${built.block}\n</openviking-context>`;

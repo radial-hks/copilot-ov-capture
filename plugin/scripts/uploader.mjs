@@ -171,6 +171,21 @@ export function workspacePeerId(cwd) {
   return cleaned;
 }
 
+// --------------------------------------------------- injected-context ----
+// Recall (auto-recall) and profile (session-start) blocks are delimited by
+// <openviking-context ...>...</openviking-context>. Copilot does not currently
+// persist hook additionalContext into the transcript (verified against 164 real
+// user.message events, 0 carried an injected block), so this strip is
+// defensive: it keeps a future host — or an ACP-backend session whose
+// user.message holds the full agent prompt — from capturing a recall/profile
+// block back as a user turn (self-referential pollution loop).
+const INJECTED_CONTEXT_RE = /<openviking-context\b[^>]*>[\s\S]*?<\/openviking-context>/gi;
+
+/** Remove injected <openviking-context> envelopes, keeping surrounding text. */
+export function stripInjectedContext(text) {
+  return String(text || "").replace(INJECTED_CONTEXT_RE, "");
+}
+
 // ---------------------------------------------------------- transcript ----
 /**
  * Parse Copilot events.jsonl lines (array of parsed objects) into ordered
@@ -194,7 +209,7 @@ function extractMessages(events, userPeerId) {
     if (!ev || typeof ev !== "object") continue;
     const data = ev.data || {};
     if (ev.type === "user.message") {
-      const text = typeof data.content === "string" ? data.content.trim() : "";
+      const text = typeof data.content === "string" ? stripInjectedContext(data.content).trim() : "";
       if (text) {
         result.push({ role: "user", text, created_at: ev.timestamp || null, peer_id: userPeerId });
       }

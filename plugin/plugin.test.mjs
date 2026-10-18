@@ -708,6 +708,14 @@ test("uploader path resolution accepts VS Code transcript files and CLI session 
   assert.equal(fallback.dir, join(os.homedir(), ".copilot", "session-state", "s2"));
 });
 
+test("uploader strips injected <openviking-context> blocks from user turns", async () => {
+  const { stripInjectedContext } = await importPluginModule("scripts", "uploader.mjs");
+  const block = '<openviking-context source="auto-recall" peer="github.com-org-repo">\n<available-memories>\n  viking://user/alice/memories/preferences/\n  - a.md — desc\n</available-memories>\n</openviking-context>';
+  assert.equal(stripInjectedContext(`before ${block} after`), "before  after");
+  assert.equal(stripInjectedContext(`${block}${block}`), "");
+  assert.equal(stripInjectedContext("plain text"), "plain text");
+});
+
 test("uploader dry-run reads VS Code transcript files end to end (queue + --transcript-dir)", async () => {
   const baseDir = join(os.tmpdir(), `ov-uploader-${process.pid}-${Date.now()}`);
   const transcriptsDir = join(baseDir, "transcripts");
@@ -829,6 +837,16 @@ test("session-start injects profile and memory listings (mock server)", async ()
         result: [{ isDir: false, rel_path: "alice/pr_workflow.md", abstract: "team PR review workflow" }],
       }));
     }
+    if (url.pathname === "/api/v1/skills") {
+      return res.end(JSON.stringify({
+        status: "ok",
+        result: { skills: [
+          { name: "my-skill", uri: "viking://user/alice/skills/my-skill", description: "does the thing" },
+          { name: "shared-skill", uri: "viking://agent/skills/shared-skill", description: "shared helper" },
+          { name: "my-skill", uri: "viking://agent/skills/my-skill", description: "shared duplicate" },
+        ] },
+      }));
+    }
     res.statusCode = 404;
     res.end("{}");
   });
@@ -845,6 +863,11 @@ test("session-start injects profile and memory listings (mock server)", async ()
     assert.match(ctx, /Alice, backend engineer/);
     assert.match(ctx, /pr_workflow\.md/);
     assert.match(ctx, /team PR review workflow/);
+    assert.match(ctx, /<available-skills>/);
+    assert.match(ctx, /does the thing/);
+    assert.match(ctx, /shared-skill/);
+    assert.match(ctx, /shared helper/);
+    assert.doesNotMatch(ctx, /shared duplicate/); // same-name shared skill is dropped
   } finally {
     if (prevUrl === undefined) delete process.env.OPENVIKING_URL; else process.env.OPENVIKING_URL = prevUrl;
     if (prevKey === undefined) delete process.env.OPENVIKING_API_KEY; else process.env.OPENVIKING_API_KEY = prevKey;

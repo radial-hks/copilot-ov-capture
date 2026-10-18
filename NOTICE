@@ -9,7 +9,9 @@ itself licensed under the Apache License, Version 2.0:
 
   plugin/scripts/lib/profile-inject.mjs
     - Source: examples/memory-plugin-shared/lib/profile-inject.mjs
-    - Status: unmodified (byte-identical body; header comment adjusted).
+    - Status: unmodified (verbatim body re-synced 2026-10-18 to include the
+      <available-skills> catalog and the buildProfileBlock options param; only
+      the local two-line header comment is prepended).
 
   plugin/servers/shared/credentials.mjs
     - Source: examples/memory-plugin-shared/lib/credentials.mjs
