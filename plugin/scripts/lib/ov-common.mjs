@@ -45,7 +45,23 @@ export function readConfig() {
     : Number(pick("skillCatalogTokenBudget", 1200));
   const skillCatalogTokenBudget = Number.isFinite(rawBudget) && rawBudget >= 0 ? rawBudget : 1200;
 
-  return { url: (url || "").replace(/\/+$/, ""), apiKey, skillCatalog, skillCatalogTokenBudget };
+  const bypassSession = envFlag("OPENVIKING_BYPASS_SESSION", pick("bypassSession", false));
+  const bypassEnv = (process.env.OPENVIKING_BYPASS_SESSION_PATTERNS || "")
+    .split(",").map((s) => s.trim()).filter(Boolean);
+  const bypassConf = harness.bypassSessionPatterns ?? harness.bypassPatterns
+    ?? plugin.bypassSessionPatterns ?? plugin.bypassPatterns;
+  const bypassSessionPatterns = bypassEnv.length
+    ? bypassEnv
+    : (Array.isArray(bypassConf) ? bypassConf : []);
+
+  return {
+    url: (url || "").replace(/\/+$/, ""),
+    apiKey,
+    skillCatalog,
+    skillCatalogTokenBudget,
+    bypassSession,
+    bypassSessionPatterns,
+  };
 }
 
 export function safePeerId(raw) {
@@ -133,4 +149,47 @@ export function makeFetchJSON(cfg, { peerId = "", defaultTimeoutMs = 10000 } = {
       return { ok: false, status: 0, result: null, error: { message: error?.message || String(error) } };
     }
   };
+}
+
+/**
+ * Glob -> RegExp for the bypass matcher, same semantics as the shared
+ * memory-plugin-shared matcher: `*` stops at a path separator, `**` crosses
+ * them, everything else is a literal.
+ */
+function globToRe(glob) {
+  let re = "^";
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*") {
+      if (glob[i + 1] === "*") { re += ".*"; i++; }
+      else re += "[^/]*";
+    } else if (/[.+?^${}()|[\]\\]/.test(c)) {
+      re += "\\" + c;
+    } else {
+      re += c;
+    }
+  }
+  re += "$";
+  return new RegExp(re);
+}
+
+/**
+ * Whether the session cwd falls under a bypass rule: the whole session stays
+ * out of OpenViking (no recall, no profile injection, no capture). A scratch
+ * directory matched here never pollutes long-term memory.
+ */
+export function isBypassed(cfg, { cwd = "" } = {}) {
+  if (cfg?.bypassSession) return true;
+  const patterns = cfg?.bypassSessionPatterns || [];
+  if (!patterns.length) return false;
+  // Windows hands hooks `C:\work\scratch` while directory patterns are written
+  // with forward slashes — match both spellings.
+  const slashCwd = typeof cwd === "string" && cwd.includes("\\") ? cwd.replace(/\\/g, "/") : "";
+  const haystacks = [cwd, slashCwd].filter(Boolean);
+  for (const pat of patterns) {
+    let re;
+    try { re = globToRe(pat); } catch { continue; }
+    if (haystacks.some((h) => re.test(h))) return true;
+  }
+  return false;
 }

@@ -13,6 +13,7 @@ import { dirname, join, resolve as resolvePath } from "node:path";
 import { homedir } from "node:os";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { readConfig, isBypassed } from "./lib/ov-common.mjs";
 
 const DEFAULT_BASE_DIR = join(homedir(), ".openviking", "copilot-capture");
 
@@ -63,6 +64,9 @@ async function main() {
   // closing crashes node on Windows (libuv uv_async assert, 0xC0000409).
   // Returning lets the loop drain so node exits 0 cleanly.
   try { ev = JSON.parse(rawInput); } catch { return; }
+  // A bypassed directory never touches OpenViking: nothing is queued, so the
+  // uploader never sees the session and the scratch dir stays out of memory.
+  if (isBypassed(readConfig(), { cwd: ev.cwd })) return;
   if (queueCaptureEvent(ev, { rawInput })) startUploader();
 }
 

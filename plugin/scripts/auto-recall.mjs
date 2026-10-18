@@ -22,7 +22,7 @@
  * convention #1 (session_id must ride along with every recall call).
  */
 
-import { readConfig, workspacePeerId } from "./lib/ov-common.mjs";
+import { readConfig, workspacePeerId, isBypassed } from "./lib/ov-common.mjs";
 import { fileURLToPath } from "node:url";
 import { resolve as resolvePath } from "node:path";
 
@@ -42,6 +42,7 @@ export async function runRecall(ev = {}) {
 
   const cfg = readConfig();
   if (!cfg.url || !cfg.apiKey) return {}; // not configured yet — silent
+  if (isBypassed(cfg, { cwd })) return {}; // bypassed dir — silent
 
   const peer = workspacePeerId(cwd);
   const headers = {

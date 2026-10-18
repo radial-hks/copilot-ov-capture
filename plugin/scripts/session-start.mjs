@@ -24,7 +24,7 @@
 
 import { fileURLToPath } from "node:url";
 import { resolve as resolvePath } from "node:path";
-import { readConfig, workspacePeerId, makeFetchJSON } from "./lib/ov-common.mjs";
+import { readConfig, workspacePeerId, makeFetchJSON, isBypassed } from "./lib/ov-common.mjs";
 import { buildProfileBlock } from "./lib/profile-inject.mjs";
 
 const BUDGET_TOKENS = 6000;
@@ -36,6 +36,7 @@ const BUDGET_TOKENS = 6000;
 export async function runSessionStart(ev = {}) {
   const cfg = readConfig();
   if (!cfg.url || !cfg.apiKey) return {}; // not configured yet — silent
+  if (isBypassed(cfg, { cwd: ev.cwd || process.cwd() })) return {}; // bypassed dir — silent
 
   const peer = workspacePeerId(ev.cwd || process.cwd());
   const fetchJSON = makeFetchJSON(cfg, { peerId: peer });

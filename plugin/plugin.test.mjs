@@ -510,6 +510,21 @@ test("uri-guard: denies file tools with viking:// paths, hints on terminal, pass
   assert.equal(decideUriGuard({}), null);
 });
 
+test("bypass matcher: glob patterns skip scratch dirs", async () => {
+  const { isBypassed } = await importPluginModule("scripts", "lib", "ov-common.mjs");
+  // bypassSession=true bypasses every directory.
+  assert.equal(isBypassed({ bypassSession: true, bypassSessionPatterns: [] }, { cwd: "/anywhere" }), true);
+  // `**` crosses separators, `*` stops at one.
+  assert.equal(isBypassed({ bypassSessionPatterns: ["/tmp/scratch**"] }, { cwd: "/tmp/scratch" }), true);
+  assert.equal(isBypassed({ bypassSessionPatterns: ["/tmp/scratch**"] }, { cwd: "/tmp/scratch/sub/dir" }), true);
+  assert.equal(isBypassed({ bypassSessionPatterns: ["/tmp/scratch*"] }, { cwd: "/tmp/scratchx" }), true);
+  assert.equal(isBypassed({ bypassSessionPatterns: ["/tmp/scratch*"] }, { cwd: "/tmp/scratch/sub" }), false);
+  // Windows backslash cwd matches forward-slash patterns.
+  assert.equal(isBypassed({ bypassSessionPatterns: ["C:/work/scratch"] }, { cwd: "C:\\work\\scratch" }), true);
+  // No patterns -> not bypassed.
+  assert.equal(isBypassed({}, { cwd: "/tmp/scratch" }), false);
+});
+
 test("hooks.json wires the full five-event hook face", () => {
   const hooks = JSON.parse(readFileSync(join(PLUGIN_ROOT, "com.github.copilot", "hooks", "hooks.json"), "utf8")).hooks;
   const events = Object.keys(hooks);
