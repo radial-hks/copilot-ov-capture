@@ -4,8 +4,8 @@ OpenViking 记忆平台 × GitHub Copilot（VS Code + Copilot CLI）集成插件
 
 1. **召回 + 手动沉淀**（标准 Agent Plugins 1.0）：openviking MCP 工具集（find/search/read/remember...）+ openviking-memory 技能
 2. **自动召回注入**（v0.3.0+）：每条 prompt 前自动检索团队记忆并注入上下文——Copilot 无需调工具就"记得"团队经验
-3. **自动捕获**（`com.github.copilot/` 扩展）：Stop hook 自动把会话内容（用户输入 + 模型回复）回放到 OpenViking，commit 触发记忆提取
-4. **能力面补全**（v0.4.0）：技能写入工具（`add_skill` / `update_skill` / `validate_skill`，本地 SKILL.md `path` 上传也支持）+ `task_status` 后台任务查询 + SessionStart 开场 profile 注入 + PreCompact 压缩前归档 + PreToolUse `viking://` URI 防护 + 召回携带 session_id（对齐官方约定，激活服务端扩写与跨轮去重）
+3. **自动捕获**（`com.github.copilot/` 扩展）：Stop hook 自动把会话内容（用户输入 + 模型回复）回放到 OpenViking；普通 Stop 按阈值归档，PreCompact/手动 `--commit` 强制归档
+4. **能力面补全**（v0.4.0+）：技能写入工具（服务端原生 `add_skill` + 本地 `update_skill` / `validate_skill`，本地 SKILL.md `path` 上传也支持）+ `task_status` 后台任务查询 + SessionStart 开场 profile/skill catalog 注入 + 会话续跑 archive overview 注入 + PreCompact 压缩前归档 + PreToolUse `viking://` URI 防护 + 召回携带 session_id（对齐官方约定，激活服务端跨轮去重）
 
 > **让 Copilot 帮你装**：把本仓库地址发给你的 Copilot 助手，加一句"读 llms.txt 帮我安装"——它会按仓库根的 [llms.txt](llms.txt) 流程引导完成（只在 user key 环节需要你提供管理员私发的凭据）。
 
@@ -44,10 +44,11 @@ copilot plugin install openviking-copilot@openviking-team
 
 ## 版本
 
-当前 **v0.4.12**。完整历史与每版根因记录见 [docs/changelog.md](docs/changelog.md)。
+当前 **v0.5.0**。完整历史与每版根因记录见 [docs/changelog.md](docs/changelog.md)。
 
 | 里程碑 | 内容 |
 |---|---|
+| 0.5.0 | 对齐上游 agent-plugins：官方 skills/shared 同步、服务端原生 add_skill、skill catalog、捕获消毒、URI guard 重定向、bypass、阈值提交、单一配置 schema、续跑 overview、live E2E 门 |
 | 0.4.11–0.4.12 | 许可证（Apache-2.0）+ vendored 卫生；去私有化（installed-plugins 通用扫描）——为上游化铺路 |
 | 0.4.5–0.4.10 | 双宿主稳定性：hooks/MCP 自定位引导、Windows 退出崩溃、VS Code transcript、timeoutSec |
 | 0.4.0 | 能力面补全：skill 工具、task_status、profile 注入、PreCompact、uri-guard |

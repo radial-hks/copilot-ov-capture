@@ -2,6 +2,16 @@
 
 > 从 README 分拆,保留完整根因记录——排障时可按版本号检索症状与修复方式。
 
+## 0.5.0 — 对齐上游 agent-plugins + 捕获/召回治理收口
+
+本版完成一轮与 OpenViking 上游 `agent-plugins/` 的同步与本地适配器收口：补齐官方 `openviking-skills` / `ov-experience-memory` / `ov-resources` 三个 skill，`servers/shared/` 回到上游逐字同步路径；本地 `add_skill` 移除，改用服务端 MCP 原生 `add_skill`（支持 `path` / 目录 / zip / Git 源 / `skills` / `list_only`），本地只保留 `update_skill` / `validate_skill` / `task_status`。
+
+召回与注入面新增 `<available-skills>` skill catalog（`skillCatalog` / `skillCatalogTokenBudget` 可配，个人优先、共享次之、同名去重），并在捕获端剥离已注入的 `<openviking-context>`，避免未来宿主把注入块回写进用户消息形成自引用污染。`uri-guard` 改为工具特化重定向：文件工具收到 `viking://` 时提示等价 `openviking_read/write/edit`，skill URI 写入重定向到 `add_skill`；terminal 命令含 `viking://` 时只提示不拦截。
+
+捕获管线新增 `bypassSession` / `bypassSessionPatterns`，命中 scratch/临时目录时 session-start、auto-recall、capture 全部静默跳过，不污染长期记忆。普通 Stop 改为阈值提交：`commitTokenThreshold` 默认 20000，低于阈值只上传 pending，不立即归档抽取；PreCompact 与手动 `node uploader.mjs --session <id> --commit` 仍强制 commit。所有 knob 收口到 `scripts/lib/config-schema.mjs`（env → `ovcli.conf plugin.agent_plugins` → `plugin` → default，`url`/`apiKey` 回退顶层键），`ov-doctor` 扩展为 12 项并显示配置解析结果。
+
+会话续跑（SessionStart 带 `session_id`）会额外注入服务端最新 archive overview（`resumeContextBudget` 默认 32000），作为 Copilot 无法完整 takeover 时的降级恢复方案。新增 `scripts/e2e-live.mjs` 作为真实服务端 E2E 门：健康/鉴权 → 合成 transcript 上传+commit → 服务端落盘/归档断言 → 续跑 overview 尽力检查 → 自动清理测试会话。发布前已完成安装态实机验收：Copilot CLI 真实 session 触发 UserPromptSubmit / SessionStart / Stop / SessionEnd hooks，自动召回与开场注入成功，capture 上传到 `import__copilot__<session>`，队列清空；短会话低于阈值 pending 属预期，commit 路径由安装目录版 live E2E 验证通过。
+
 ## 0.4.12 — 去私有化(为开源分发与上游化铺路)
 
 hooks.json(5 事件 × 4 方言)与 mcp.json 引导串中硬编码的 `~/.copilot/installed-plugins/openviking-team/openviking-copilot` 兜底路径替换为 **installed-plugins 通用扫描**(枚举任意 marketplace 名下二级目录、探测 `scripts/hook-runner.mjs` 标记)——第三方 marketplace 名、`_direct` 安装、改名后引导依然命中;候选优先级不变(env `PLUGIN_ROOT` → cwd → 扫描)。ov-doctor 修复文案不再硬编码 marketplace 名(第 6 步注册检测本就是通用扫描)。bootstrap 候选全部未命中时 hook 仍静默退出 0(hook 降级原则不变),MCP 入口未命中仍 exit 1 + stderr 提示。

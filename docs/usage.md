@@ -19,10 +19,12 @@
 
 - **压缩前归档（PreCompact）**：长会话触发 VS Code 上下文压缩前，先把未归档的对话增量上传并 commit——压缩只影响本地上下文窗口，OpenViking 侧不丢任何未提取内容
 - **viking:// URI 防护（PreToolUse）**：Copilot 误把 `viking://` 资源当本地文件去读/写时，调用被拒绝并提示改用 openviking MCP 工具（read/list/find）——不再出现"文件不存在"的困惑报错
+- **会话续跑恢复**：恢复已有 Copilot 会话时，SessionStart 会尝试注入该会话最新 archive overview，帮助长会话在压缩/恢复后找回已归档历史（Copilot 无完整 takeover 面，因此这是降级恢复）
 
 ## 其他日常
 
-- **会话自动捕获**：会话结束后 Stop hook 自动触发，记忆提取由服务端异步完成（1-2 分钟）
+- **会话自动捕获**：会话结束后 Stop hook 自动触发并上传增量。普通短会话默认低于 `commitTokenThreshold=20000` 时先留在服务端 pending；跨过阈值、PreCompact、或手动 `node <插件目录>/scripts/uploader.mjs --session <会话id> --commit` 后才归档并触发记忆提取（通常 1-2 分钟）
+- **临时目录旁路**：维护者可用 `OPENVIKING_BYPASS_SESSION=true` 或 `OPENVIKING_BYPASS_SESSION_PATTERNS`（CSV glob）让 scratch/临时目录整轮不碰 OpenViking，避免污染长期记忆
 - **手动检索**：Copilot 里说"用 openviking 搜一下 XXX"（openviking MCP 工具）
 - **显式沉淀**：会话中随时说"把这个经验 remember 到 openviking"——适合你想确保入库的结论
 - **写入/更新技能**：说“把这个流程存成一个 skill”——Copilot 调服务端原生 `add_skill`（支持 `data` 全文、`path` 本地 SKILL.md/目录/zip 或 Git URL、`skills` 选择性安装、`list_only` 试列）把 SKILL.md 写入你的个人技能目录（`viking://~/skills`）；`update_skill` 整包替换、`validate_skill` 先校验（两者仍为本地工具）。add/commit 是异步的，返回的 task_id 可用 `task_status` 查询进度。注意：通用 `write` 工具写不了 skills（服务端设计边界，见排障表）
@@ -40,7 +42,7 @@ node ~/.copilot/installed-plugins/openviking-team/openviking-copilot/scripts/ov-
 
 > 路径不存在时先 `copilot plugin list` 找到插件目录；VS Code 市场安装用户路径在扩展目录下，同理对路径运行。
 
-9 项体检（Node / 凭据 / 连通 / 鉴权 / 技能接口 / peer / 捕获管线 / 插件注册 / Hook 命令路径），FAIL 项自带修复提示。其中 **Hook 命令路径** 直接对应"hooks 静默失效"类问题（`Cannot find module 'D:\scripts\...'`），必须 PASS。先把 doctor 结果发给管理员，而不是截图聊天窗口。
+12 项体检（Node / 凭据 / 连通 / 鉴权 / 技能接口 / peer / 捕获队列 / 捕获游标 / 最近上传 / 插件注册 / Hook 命令路径 / 配置项），FAIL 项自带修复提示。其中 **Hook 命令路径** 直接对应"hooks 静默失效"类问题（`Cannot find module 'D:\scripts\...'`），**配置项** 会显示 `skillCatalog`、`bypassSession`、`commitTokenThreshold` 等解析结果。先把 doctor 结果发给管理员，而不是截图聊天窗口。
 
 ## 按项目精准召回（workspace peer）
 

@@ -63,7 +63,7 @@ install.ps1 已移除               # 安装统一走 CLI 市场 / VS Code 市�
 | uri-guard | PreToolUse 拒绝/提示 | 同语义（PreToolUse deny + systemMessage；VS Code 忽略 matcher，脚本内过滤） |
 | 写 skill | ❌（MCP `write` 可写域不含 `skills/`，与所有 MCP 型 harness 一致） | ✅ 服务端原生 `add_skill`（0.5.0+）+ 本地 `update_skill` / `validate_skill`（REST，`path` 上传本地 SKILL.md） |
 | 后台任务查询 | ❌（MCP 面无 task 工具） | ✅ task_status（GET /api/v1/tasks/{id}，`ov task status` 等价） |
-| 自诊断 | ov-memory-doctor skill + 脚本 | ov-doctor.mjs（9 项，含技能 REST 接口与 Hook 命令路径检查） |
+| 自诊断 | ov-memory-doctor skill + 脚本 | ov-doctor.mjs（12 项，含技能 REST 接口、捕获状态、配置项与 Hook 命令路径检查） |
 
 未移植（有意）：SubagentStart/SubagentStop（Copilot 转录文件的子代理结构未验证）、压缩接管 takeover（VS Code 自管压缩，无接管面）、statusline（VS Code 无插件 statusline）、召回再摘要客户端压缩（服务端 context 面 max_tokens 已控注入预算，本地注入块限 8 条）。
 

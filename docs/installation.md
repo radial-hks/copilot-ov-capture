@@ -60,7 +60,7 @@ VS Code 原生支持仓库市场——settings.json 加一行，之后全程图�
 ## 安装后验证
 
 ```powershell
-# Windows：一键自诊断（Node/凭据/连通/鉴权/技能接口/peer/捕获管线/插件注册/Hook 命令路径）
+# Windows：一键自诊断（Node/凭据/连通/鉴权/技能接口/peer/捕获队列/捕获游标/最近上传/插件注册/Hook 命令路径/配置项）
 node "<插件目录>\scripts\ov-doctor.mjs"
 # CLI 安装的插件目录通常在：
 node "%USERPROFILE%\.copilot\installed-plugins\openviking-team\openviking-copilot\scripts\ov-doctor.mjs"
@@ -84,7 +84,7 @@ node ~/.copilot/installed-plugins/openviking-team/openviking-copilot/scripts/ov-
    ```bash
    tail -n 5 ~/.openviking/copilot-capture/uploader.log
    ```
-   - ✅ 预期：出现 `session <id>: +N messages, committed`
+   - ✅ 预期：出现 `session <id>: +N messages, pending (below commit threshold)` 或 `session <id>: +N messages, committed`；短会话 pending 是 v0.5.0 起的默认策略，PreCompact 或手动 `--commit` 会强制归档
 5. Studio：浏览器打开 `<your-openviking-server-url>/studio`，用**自己的 user key** 登录，Sessions 页应能看到 `import__copilot__<会话id>`
 
 ## 更新插件
@@ -97,3 +97,9 @@ copilot plugin install openviking-copilot@openviking-team
 ```text
 路径 2（VS Code 市场）：界面自动检查（24h 周期）；手动触发用 Ctrl+Shift+P → Extensions: Check for Extension Updates，有新版点 Update
 ```
+
+## v0.5.0 升级后重点
+
+- `copilot plugin install openviking-copilot@openviking-team` 后建议立刻跑 `ov-doctor`，确认 **配置项** 与 **Hook 命令路径** 都 PASS。
+- 普通短会话可能只上传 pending，不马上抽取记忆；需要立刻归档时运行 `node <插件目录>/scripts/uploader.mjs --session <会话id> --commit`。
+- 管理员发布前可运行 `node <插件目录>/scripts/e2e-live.mjs`，用真实 OpenViking 服务验证上传、commit 与清理链路。
