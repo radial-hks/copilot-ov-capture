@@ -45,6 +45,8 @@ copilot plugin list
 
 CLI 安装后的插件目录会被 VS Code 自动发现。让用户在 VS Code 执行 `Developer: Reload Window`，使 Copilot 插件重新加载。
 
+说明：同时出现 `~/.copilot/installed-plugins/openviking-team/openviking-copilot` 和 `~/.vscode/agent-plugins/github.com/radial-hks/copilot-ov-capture/plugin` 是预期行为。前者是 Copilot CLI 的安装目录，后者是 VS Code 图形市场的仓库缓存/安装目录；不要手工改这两个目录。若版本不同，先运行 `copilot plugin update openviking-copilot@openviking-team`，再 Reload Window。
+
 ### 第 3 步：VS Code 图形安装备选路径
 
 如果用户没有可用的 Copilot CLI，改走 VS Code 图形安装：先在用户级 settings.json 合并这一行（不要覆盖现有设置）：
@@ -111,11 +113,12 @@ node ~/.copilot/installed-plugins/openviking-team/openviking-copilot/scripts/ov-
 | doctor 报服务不通 | `curl <your-openviking-server-url>/health`；内网/VPN 问题 |
 | uploader.log 显示 `pending (below commit threshold)`，Studio 暂时没新记忆 | v0.5.0 起普通 Stop 低于 `commitTokenThreshold`（默认 20000）只上传 pending，不立即归档抽取；等待累计跨阈值、触发 PreCompact，或手动 `node "<插件目录>\scripts\uploader.mjs" --session <会话id> --commit` |
 | Copilot 误把 `viking://...` 当成本地文件读写 | v0.5.0 的 URI guard 会拒绝并提示改用 openviking MCP 工具；让 Copilot 调 `read`/`find`/`search` 等 OpenViking 工具 |
-| 改了插件不生效 | VS Code：Check for Extension Updates；CLI 装的需重装（缓存陷阱） |
+| 同时看到 `.vscode/agent-plugins/...` 和 `.copilot/installed-plugins/...` 两份插件 | 这是 VS Code 与 Copilot CLI 两个宿主各自缓存/安装导致的预期行为。检查两个 `plugin.json` 和 `copilot plugin list`；若 CLI 显示旧版本，运行 `copilot plugin update openviking-copilot@openviking-team` 后 Reload Window |
+| 改了插件不生效 | VS Code：Check for Extension Updates；CLI 优先 `copilot plugin update openviking-copilot@openviking-team`，不行再重跑 install（缓存陷阱） |
 
 ## 升级
 
-CLI 安装用户：重跑 `copilot plugin install openviking-copilot@openviking-team` 即升级。
+CLI 安装用户：优先运行 `copilot plugin update openviking-copilot@openviking-team`；如果当前 CLI 不支持 update 或更新失败，再重跑 `copilot plugin install openviking-copilot@openviking-team`。
 
 VS Code 图形安装用户：VS Code 每 24h 自动检查，界面点 Update 即可；手动触发 `Extensions: Check for Extension Updates`。
 

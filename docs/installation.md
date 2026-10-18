@@ -27,9 +27,11 @@ copilot plugin install openviking-copilot@openviking-team
 copilot plugin list
 ```
 
-> **缓存陷阱（官方文档明示）**：CLI 安装后从缓存读取，改动插件源目录后必须**重新执行 install** 才生效。升级流程 = 新版本发布后重跑 `copilot plugin install openviking-copilot@openviking-team`。
+> **缓存陷阱（官方文档明示）**：CLI 安装后从缓存读取，改动插件源目录不会自动生效。升级流程 = 新版本发布后优先运行 `copilot plugin update openviking-copilot@openviking-team`；update 不可用或失败时再重跑 `copilot plugin install openviking-copilot@openviking-team`。
 >
-> CLI 装的插件（`~/.copilot/installed-plugins/`）VS Code 会**自动发现**，两边共用——无需重复安装。
+> CLI 装的插件（`~/.copilot/installed-plugins/`）VS Code 会**自动发现**，无需重复安装。
+>
+> **两套目录是预期行为**：CLI 会把运行时插件放在 `~/.copilot/installed-plugins/<marketplace>/<plugin>/`，并在 `~/.copilot/Library/Caches/copilot/marketplaces/` 缓存市场仓库；VS Code 图形市场会把仓库缓存到 `~/.vscode/agent-plugins/github.com/<owner>/<repo>/plugin`。同时用过 CLI 安装和 VS Code 图形安装时，看到两份 `openviking-copilot` 目录不是冲突。若两边版本不同，以 `copilot plugin list`、两个目录的 `plugin.json` 为准，优先运行 `copilot plugin update openviking-copilot@openviking-team` 刷新 CLI 侧，再在 VS Code 执行 `Developer: Reload Window`。
 
 **装完插件本体后，还差凭据**（MCP/捕获上传器需要）。手工创建 `%USERPROFILE%\.openviking\ovcli.conf`：
 
@@ -90,9 +92,11 @@ node ~/.copilot/installed-plugins/openviking-team/openviking-copilot/scripts/ov-
 ## 更新插件
 
 ```bash
-# 路径 1（CLI 安装）：重装即升级（CLI 有缓存陷阱——不重装不生效）
-copilot plugin install openviking-copilot@openviking-team
+# 路径 1（CLI 安装）：update 即升级（CLI 有缓存陷阱——不更新不生效）
+copilot plugin update openviking-copilot@openviking-team
 ```
+
+`copilot plugin update` 不可用或失败时，再重跑 `copilot plugin install openviking-copilot@openviking-team`。
 
 ```text
 路径 2（VS Code 市场）：界面自动检查（24h 周期）；手动触发用 Ctrl+Shift+P → Extensions: Check for Extension Updates，有新版点 Update
