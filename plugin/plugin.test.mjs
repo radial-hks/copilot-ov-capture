@@ -976,6 +976,9 @@ test("session-start injects profile and memory listings (mock server)", async ()
         ] },
       }));
     }
+    if (/\/api\/v1\/sessions\/import__copilot__.*\/context/.test(url.pathname)) {
+      return res.end(JSON.stringify({ status: "ok", result: { latest_archive_overview: "## Previous session\n- the capture work from before" } }));
+    }
     res.statusCode = 404;
     res.end("{}");
   });
@@ -997,6 +1000,9 @@ test("session-start injects profile and memory listings (mock server)", async ()
     assert.match(ctx, /shared-skill/);
     assert.match(ctx, /shared helper/);
     assert.doesNotMatch(ctx, /shared duplicate/); // same-name shared skill is dropped
+    assert.match(ctx, /source="session-resume"/);
+    assert.match(ctx, /Previous session/);
+    assert.match(ctx, /the capture work from before/);
   } finally {
     if (prevUrl === undefined) delete process.env.OPENVIKING_URL; else process.env.OPENVIKING_URL = prevUrl;
     if (prevKey === undefined) delete process.env.OPENVIKING_API_KEY; else process.env.OPENVIKING_API_KEY = prevKey;

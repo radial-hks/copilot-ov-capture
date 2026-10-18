@@ -23,6 +23,7 @@ export const CONFIG_SCHEMA = [
   { name: "bypassSession", type: "bool", default: false, env: "OPENVIKING_BYPASS_SESSION" },
   { name: "bypassSessionPatterns", type: "list", default: [], env: "OPENVIKING_BYPASS_SESSION_PATTERNS", aliases: ["bypassPatterns"] },
   { name: "commitTokenThreshold", type: "int", default: 20000, min: 1, max: 1000000, env: "OPENVIKING_COMMIT_TOKEN_THRESHOLD" },
+  { name: "resumeContextBudget", type: "int", default: 32000, min: 0, max: 200000, env: "OPENVIKING_RESUME_CONTEXT_BUDGET" },
 ];
 
 function envFirst(env, names) {

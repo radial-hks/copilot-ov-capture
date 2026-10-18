@@ -20,6 +20,9 @@
  * Budget: 6000 tokens (the official thin-hook tier), CJK-aware via the
  * vendored estimator. The skill catalog is budgeted separately
  * (skillCatalogTokenBudget, default 1200) and toggled by skillCatalog.
+ * On a resumed session (session_id present) the latest archive overview is
+ * also injected (resumeContextBudget, default 32000), so a continued session
+ * recovers the history it no longer carries in full.
  */
 
 import { fileURLToPath } from "node:url";
@@ -28,6 +31,21 @@ import { readConfig, workspacePeerId, makeFetchJSON, isBypassed } from "./lib/ov
 import { buildProfileBlock } from "./lib/profile-inject.mjs";
 
 const BUDGET_TOKENS = 6000;
+const OV_SESSION_PREFIX = "import__copilot__";
+
+/**
+ * The latest archive overview for a session, or "" when there is none (or the
+ * endpoint is unavailable). The overview stands in for history a resumed
+ * session no longer carries in full.
+ */
+async function fetchResumeOverview(fetchJSON, sessionId, budget) {
+  const res = await fetchJSON(
+    `/api/v1/sessions/${encodeURIComponent(OV_SESSION_PREFIX + sessionId)}/context?token_budget=${budget}`,
+  );
+  if (!res.ok || !res.result) return "";
+  const overview = res.result.latest_archive_overview;
+  return typeof overview === "string" ? overview.trim() : "";
+}
 
 /**
  * Profile-injection logic, exported for in-process testing. Returns the
@@ -46,9 +64,21 @@ export async function runSessionStart(ev = {}) {
       skillCatalog: cfg.skillCatalog,
       skillCatalogTokenBudget: cfg.skillCatalogTokenBudget,
     });
-    if (!built || !built.block) return {};
-    const context = `<openviking-context source="session-start" peer="${peer || "user-level"}">\n`
-      + `${built.block}\n</openviking-context>`;
+
+    let context = "";
+    if (built && built.block) {
+      context = `<openviking-context source="session-start" peer="${peer || "user-level"}">\n${built.block}\n</openviking-context>`;
+    }
+
+    if (ev.session_id && cfg.resumeContextBudget > 0) {
+      const overview = await fetchResumeOverview(fetchJSON, ev.session_id, cfg.resumeContextBudget);
+      if (overview) {
+        context += (context ? "\n" : "")
+          + `<openviking-context source="session-resume" session="${OV_SESSION_PREFIX}${ev.session_id}">\n${overview}\n</openviking-context>`;
+      }
+    }
+
+    if (!context) return {};
     return { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context } };
   } catch { return {}; } // any failure — never block the session
 }
