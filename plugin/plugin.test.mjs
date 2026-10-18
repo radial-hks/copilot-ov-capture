@@ -325,11 +325,11 @@ test("mcp bootstrap locates and launches the entry without inherited PLUGIN_ROOT
   assert.match(miss.stderr, /MCP entry not found/);
 });
 
-test("skill tool provider lists add/update/validate/task_status with flat schemas", async () => {
+test("skill tool provider lists update/validate/task_status with flat schemas", async () => {
   const { createSkillToolProvider } = await importPluginModule("local-tools", "skill-tools.mjs");
   const provider = createSkillToolProvider({ fetchImpl: async () => { throw new Error("must not fetch"); } });
   const tools = provider.listTools();
-  assert.deepEqual(tools.map((t) => t.name), ["add_skill", "update_skill", "validate_skill", "task_status"]);
+  assert.deepEqual(tools.map((t) => t.name), ["update_skill", "validate_skill", "task_status"]);
   for (const tool of tools) {
     assert.equal(tool.inputSchema.type, "object", `${tool.name}: schema must be a flat object`);
     assert.equal(typeof tool.inputSchema.properties, "object", `${tool.name}: properties expected`);
@@ -343,43 +343,6 @@ test("skill tool provider lists add/update/validate/task_status with flat schema
   }
   // Unknown tools are not handled locally (proxy forwards them upstream).
   assert.equal(await provider.callTool({ name: "find", arguments: {} }, { config: {} }), null);
-});
-
-test("skill tool provider: add_skill posts to the REST endpoint with auth headers", async () => {
-  const calls = [];
-  const { createSkillToolProvider } = await importPluginModule("local-tools", "skill-tools.mjs");
-  const provider = createSkillToolProvider({
-    fetchImpl: async (url, init) => {
-      calls.push({ url, init });
-      return new Response(JSON.stringify({
-        status: "ok",
-        result: { status: "success", uri: "viking://user/alice/skills/my-skill", task_id: "t-1" },
-      }), { status: 200, headers: { "content-type": "application/json" } });
-    },
-  });
-  const config = {
-    restBaseUrl: "http://ov.test",
-    apiKey: "key-1",
-    account: "acct",
-    user: "alice",
-    sendIdentityHeaders: true,
-    peerId: "github.com-org-repo",
-    userAgent: "openviking-memory-agent-plugins/0.4.0",
-    timeoutMs: 5000,
-  };
-  const result = await provider.callTool(
-    { name: "add_skill", arguments: { data: "---\nname: my-skill\ndescription: test\n---\n\n# my-skill\n" } },
-    { config },
-  );
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, "http://ov.test/api/v1/skills");
-  assert.equal(calls[0].init.method, "POST");
-  assert.equal(calls[0].init.headers.Authorization, "Bearer key-1");
-  assert.equal(calls[0].init.headers["X-OpenViking-Account"], "acct");
-  assert.equal(calls[0].init.headers["X-OpenViking-Actor-Peer"], "github.com-org-repo");
-  assert.deepEqual(JSON.parse(calls[0].init.body), { data: "---\nname: my-skill\ndescription: test\n---\n\n# my-skill\n" });
-  assert.equal(result.isError, undefined);
-  assert.ok(JSON.stringify(result).includes("viking://user/alice/skills/my-skill"));
 });
 
 test("skill tool provider: update_skill PUTs to /skills/{name} and surfaces errors as isError", async () => {
@@ -414,10 +377,6 @@ test("skill tool provider: missing required args and from_source guard return is
   });
   const config = { restBaseUrl: "http://ov.test", apiKey: "k", timeoutMs: 5000 };
 
-  const noData = await provider.callTool({ name: "add_skill", arguments: {} }, { config });
-  assert.equal(noData.isError, true);
-  assert.match(noData.content[0].text, /add_skill requires/);
-
   const noName = await provider.callTool({ name: "update_skill", arguments: { data: "x" } }, { config });
   assert.equal(noName.isError, true);
   assert.match(noName.content[0].text, /skill_name/);
@@ -427,7 +386,7 @@ test("skill tool provider: missing required args and from_source guard return is
   assert.match(noPayload.content[0].text, /data.*from_source|from_source.*data/);
 
   const noBase = await provider.callTool(
-    { name: "add_skill", arguments: { data: "x" } },
+    { name: "update_skill", arguments: { skill_name: "s", data: "x" } },
     { config: { restBaseUrl: "", timeoutMs: 5000 } },
   );
   assert.equal(noBase.isError, true);
@@ -460,7 +419,7 @@ test("skill tool provider: task_status GETs the Task API endpoint", async () => 
   assert.match(noId.content[0].text, /task_id/);
 });
 
-test("skill tool provider: add_skill `path` uploads the local file via temp_upload", async () => {
+test("skill tool provider: update_skill `path` uploads the local file via temp_upload", async () => {
   const tmpSkill = join(PLUGIN_ROOT, "..", "..", ".tmp-skill-test-SKILL.md");
   writeFileSync(tmpSkill, "---\nname: path-skill\ndescription: uploaded via path\n---\n\n# path-skill\n");
   try {
@@ -485,23 +444,24 @@ test("skill tool provider: add_skill `path` uploads the local file via temp_uplo
       },
     });
     const result = await provider.callTool(
-      { name: "add_skill", arguments: { path: tmpSkill } },
+      { name: "update_skill", arguments: { skill_name: "path-skill", path: tmpSkill } },
       { config: { restBaseUrl: "http://ov.test", apiKey: "k", timeoutMs: 5000 } },
     );
     assert.equal(calls.length, 2);
-    assert.equal(calls[1].url, "http://ov.test/api/v1/skills");
+    assert.equal(calls[1].url, "http://ov.test/api/v1/skills/path-skill");
+    assert.equal(calls[1].init.method, "PUT");
     assert.deepEqual(JSON.parse(calls[1].init.body), { temp_file_id: "tmp-9" });
     assert.equal(result.isError, undefined);
 
     const both = await provider.callTool(
-      { name: "add_skill", arguments: { path: tmpSkill, data: "x" } },
+      { name: "update_skill", arguments: { skill_name: "s", path: tmpSkill, data: "x" } },
       { config: { restBaseUrl: "http://ov.test", apiKey: "k", timeoutMs: 5000 } },
     );
     assert.equal(both.isError, true);
     assert.match(both.content[0].text, /exactly one/);
 
     const missing = await provider.callTool(
-      { name: "add_skill", arguments: { path: "/nonexistent/SKILL.md" } },
+      { name: "update_skill", arguments: { skill_name: "s", path: "/nonexistent/SKILL.md" } },
       { config: { restBaseUrl: "http://ov.test", apiKey: "k", timeoutMs: 5000 } },
     );
     assert.equal(missing.isError, true);

@@ -6,12 +6,16 @@
  *
  * Skill write path: MCP `write` cannot touch `skills/` (writable domain is
  * resources/user/agent, with the user root's `skills/ peers/ privacy/
- * sessions/` read-only), and the documented entries for adding skills are
- * REST / `ov add-skill` / openclaw `add_skill`. add_skill / update_skill /
- * validate_skill here call the same REST API; `path` supports a local
- * SKILL.md file the same way `ov add-skill ./SKILL.md` does (via
- * temp_upload). Task tracking: add_skill / add_resource / session commits
- * are asynchronous — task_status polls the Task API (`ov task status`).
+ * sessions/` read-only). update_skill / validate_skill here call the REST
+ * API; `path` supports a local SKILL.md file the same way `ov add-skill
+ * ./SKILL.md` does (via temp_upload). Task tracking: add_skill / add_resource
+ * / session commits are asynchronous — task_status polls the Task API
+ * (`ov task status`).
+ *
+ * add_skill is deliberately NOT provided here: the server's own /mcp now
+ * exposes a native `add_skill` (v0.5.0+, with `skills`, `list_only`, and
+ * directory/zip/Git sources). Registering a local one would shadow that
+ * richer upstream tool.
  *
  * It plugs into the vendored proxy core via its `localToolProvider` extension
  * point: `listTools()` entries are appended to the server's `tools/list`
@@ -32,36 +36,6 @@ const WAIT_TIMEOUT_MS = 60000;
 // Server-side integrity limit for a single skill file.
 const MAX_FILE_BYTES = 16 * 1024 * 1024;
 
-const ADD_SKILL = {
-  name: "add_skill",
-  description:
-    "Add a skill to the OpenViking knowledge base. The MCP `write` tool cannot create skills — this is the supported entry. "
-    + "Pass exactly one of `data` (a complete SKILL.md document: YAML frontmatter with `name` (kebab-case, <=64 chars of [a-z0-9_-]) and `description`, then the full markdown body; a Git repository / GitHub tree URL is also accepted) "
-    + "or `path` (absolute path of a local SKILL.md file, uploaded like `ov add-skill ./SKILL.md`). "
-    + "Targets your private skills root (`viking://~/skills`) by default; pass `target_uri` (e.g. `viking://agent/skills` for the account-shared root) to override. "
-    + "Returns the skill URI and a background processing `task_id` — check it with task_status.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      data: {
-        type: "string",
-        description: "Complete SKILL.md content (frontmatter + markdown), or a Git repository / GitHub tree URL. A structured {name, description, content} object is also accepted.",
-      },
-      path: {
-        type: "string",
-        description: "Absolute path of a local SKILL.md file to upload (directories/zip packages are not supported — point at the SKILL.md itself).",
-      },
-      target_uri: {
-        type: "string",
-        description: "Skills root to add into. Omit for your private root (viking://~/skills); use viking://agent/skills for the account-shared root (requires permission).",
-      },
-      wait: {
-        type: "boolean",
-        description: "Wait for background processing (embedding/vectorization) to finish. Default false: returns the task_id immediately.",
-      },
-    },
-  },
-};
 const UPDATE_SKILL = {
   name: "update_skill",
   description:
@@ -173,7 +147,7 @@ function pickDefined(source, keys) {
 }
 
 export function createSkillToolProvider({ fetchImpl = globalThis.fetch } = {}) {
-  const tools = [ADD_SKILL, UPDATE_SKILL, VALIDATE_SKILL, TASK_STATUS];
+  const tools = [UPDATE_SKILL, VALIDATE_SKILL, TASK_STATUS];
 
   async function request(config, path, { method = "POST", body, form, timeoutMs }) {
     const controller = new AbortController();
@@ -248,15 +222,6 @@ export function createSkillToolProvider({ fetchImpl = globalThis.fetch } = {}) {
     return { body };
   }
 
-  async function addSkill(args, config) {
-    if (args?.data === undefined && (args?.path === undefined || args?.path === null)) {
-      return textResult("add_skill requires `data` (SKILL.md content or a Git URL) or `path` (local SKILL.md file).", true);
-    }
-    const resolved = await resolvePayload(config, args, ["data", "target_uri", "wait"]);
-    if (resolved.error) return resolved.error;
-    return finish("add_skill", await request(config, SKILLS_PATH, { body: resolved.body, timeoutMs: budget(config, resolved.body) }));
-  }
-
   async function updateSkill(args, config) {
     const name = args?.skill_name;
     if (!name) return textResult("update_skill requires `skill_name`.", true);
@@ -289,7 +254,6 @@ export function createSkillToolProvider({ fetchImpl = globalThis.fetch } = {}) {
   }
 
   const handlers = {
-    [ADD_SKILL.name]: addSkill,
     [UPDATE_SKILL.name]: updateSkill,
     [VALIDATE_SKILL.name]: validateSkill,
     [TASK_STATUS.name]: taskStatus,

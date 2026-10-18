@@ -25,7 +25,7 @@
 - **会话自动捕获**：会话结束后 Stop hook 自动触发，记忆提取由服务端异步完成（1-2 分钟）
 - **手动检索**：Copilot 里说"用 openviking 搜一下 XXX"（openviking MCP 工具）
 - **显式沉淀**：会话中随时说"把这个经验 remember 到 openviking"——适合你想确保入库的结论
-- **写入/更新技能**：说"把这个流程存成一个 skill"——Copilot 调 `add_skill` 把 SKILL.md 写入你的个人技能目录（`viking://~/skills`；也支持 `path` 直接上传本地 SKILL.md 文件）；`update_skill` 整包替换、`validate_skill` 先校验。add/commit 是异步的，返回的 task_id 可用 `task_status` 查询进度。注意：通用 `write` 工具写不了 skills（服务端设计边界，见排障表）
+- **写入/更新技能**：说“把这个流程存成一个 skill”——Copilot 调服务端原生 `add_skill`（支持 `data` 全文、`path` 本地 SKILL.md/目录/zip 或 Git URL、`skills` 选择性安装、`list_only` 试列）把 SKILL.md 写入你的个人技能目录（`viking://~/skills`）；`update_skill` 整包替换、`validate_skill` 先校验（两者仍为本地工具）。add/commit 是异步的，返回的 task_id 可用 `task_status` 查询进度。注意：通用 `write` 工具写不了 skills（服务端设计边界，见排障表）
 - **Studio**：`<your-openviking-server-url>/studio`，user key 登录，可看/搜自己的全部记忆与会话
 
 ## 出问题怎么办（自诊断）

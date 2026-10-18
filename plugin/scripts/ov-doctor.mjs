@@ -72,7 +72,7 @@ if (cfg.url && cfg.apiKey) {
           signal: AbortSignal.timeout(8000),
         });
         check("技能 REST 接口", sk.ok, `HTTP ${sk.status}`,
-          sk.status === 404 ? "服务器版本过旧，无 /api/v1/skills（add_skill/update_skill 工具不可用）——找管理员升级服务端" : "");
+          sk.status === 404 ? "服务器版本过旧，无 /api/v1/skills（update_skill/validate_skill 工具不可用）——找管理员升级服务端" : "");
       } catch { check("技能 REST 接口", false, "请求失败", "确认服务器可达"); }
     }
   } catch (e) {
