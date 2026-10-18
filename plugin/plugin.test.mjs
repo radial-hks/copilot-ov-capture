@@ -9,7 +9,7 @@
  */
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -525,6 +525,77 @@ test("bypass matcher: glob patterns skip scratch dirs", async () => {
   assert.equal(isBypassed({}, { cwd: "/tmp/scratch" }), false);
 });
 
+test("uploader defers commit below threshold and honors --commit", async () => {
+  const baseDir = join(os.tmpdir(), `ov-commit-${process.pid}-${Date.now()}`);
+  const transcriptsDir = join(baseDir, "transcripts");
+  const fakeHome = join(baseDir, "home");
+  const sessionId = "commit-e2e-1";
+  const transcriptFile = join(transcriptsDir, `${sessionId}.jsonl`);
+  mkdirSync(transcriptsDir, { recursive: true });
+  mkdirSync(join(fakeHome, ".openviking", "copilot-capture"), { recursive: true });
+  writeFileSync(transcriptFile, [
+    JSON.stringify({ id: "e1", timestamp: "2026-09-18T00:00:00Z", type: "user.message", data: { content: "hello" } }),
+    "",
+  ].join("\n"));
+
+  let commitCalls = 0;
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url, "http://127.0.0.1");
+    res.setHeader("content-type", "application/json");
+    if (req.method === "POST" && url.pathname.endsWith("/commit")) {
+      commitCalls++;
+      return res.end(JSON.stringify({ status: "ok", result: { archived: true } }));
+    }
+    if (req.method === "GET" && /\/sessions\/import__copilot__/.test(url.pathname)) {
+      return res.end(JSON.stringify({ status: "ok", result: { pending_tokens: 5000 } }));
+    }
+    if (req.method === "POST" && url.pathname.endsWith("/messages/batch")) {
+      return res.end(JSON.stringify({ status: "ok", result: { added: 1 } }));
+    }
+    if (req.method === "POST" && url.pathname.endsWith("/sessions")) {
+      return res.end(JSON.stringify({ status: "ok", result: { session_id: "import__copilot__commit-e2e-1" } }));
+    }
+    res.statusCode = 404;
+    res.end("{}");
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+  const env = {
+    ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== "PLUGIN_ROOT" && k !== "HOME" && k !== "USERPROFILE" && k !== "OPENVIKING_URL" && k !== "OPENVIKING_API_KEY" && k !== "OPENVIKING_CLI_CONFIG_FILE")),
+    HOME: fakeHome,
+    USERPROFILE: fakeHome,
+    OPENVIKING_URL: `http://127.0.0.1:${port}`,
+    OPENVIKING_API_KEY: "k",
+  };
+  // Async spawn: spawnSync would block this process's event loop, so the mock
+  // server could never answer the uploader's fetch (deadlock).
+  const run = (extra = []) => new Promise((resolve) => {
+    const child = spawn(
+      process.execPath,
+      [join(PLUGIN_ROOT, "scripts", "uploader.mjs"), "--session", sessionId, "--transcript-dir", transcriptFile, "--cwd", baseDir, ...extra],
+      { env },
+    );
+    let out = "", err = "";
+    child.stdout.on("data", (d) => { out += d; });
+    child.stderr.on("data", (d) => { err += d; });
+    child.on("close", (code) => resolve({ code, out, err }));
+  });
+  try {
+    // pending 5000 < default threshold 20000 -> batch lands, commit deferred.
+    let r = await run();
+    assert.equal(r.code, 0, r.err);
+    assert.equal(commitCalls, 0);
+    // --commit forces a commit even with no new events (the cursor already
+    // advanced past the uploaded turn).
+    r = await run(["--commit"]);
+    assert.equal(r.code, 0, r.err);
+    assert.equal(commitCalls, 1);
+  } finally {
+    server.close();
+    rmSync(baseDir, { recursive: true, force: true });
+  }
+});
+
 test("hooks.json wires the full five-event hook face", () => {
   const hooks = JSON.parse(readFileSync(join(PLUGIN_ROOT, "com.github.copilot", "hooks", "hooks.json"), "utf8")).hooks;
   const events = Object.keys(hooks);
@@ -705,6 +776,7 @@ test("capture.mjs queues Stop and PreCompact events without PowerShell", async (
       transcript_path: event.transcript_path,
       cwd: event.cwd,
       timestamp: event.timestamp,
+      hook_event_name: "Stop",
     }]);
     assert.match(readFileSync(join(baseDir, "events-mirror.jsonl"), "utf8"), /"hook_event_name":"Stop"/);
     assert.equal(queueCaptureEvent({ hook_event_name: "UserPromptSubmit", session_id: "s-utf8" }, { baseDir }), false);

@@ -27,6 +27,7 @@ export function queueCaptureEvent(ev = {}, { baseDir = DEFAULT_BASE_DIR, rawInpu
     transcript_path: ev.transcript_path,
     cwd: ev.cwd,
     timestamp: ev.timestamp,
+    hook_event_name: ev.hook_event_name,
   };
   appendFileSync(join(baseDir, "queue.jsonl"), `${JSON.stringify(entry)}\n`, "utf8");
   appendFileSync(join(baseDir, "events-mirror.jsonl"), `${rawInput || JSON.stringify(ev)}\n`, "utf8");

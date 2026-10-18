@@ -16,6 +16,7 @@
  *
  * Modes:
  *   node uploader.mjs --session <id> [--transcript-dir <dir>]   live single session
+ *   node uploader.mjs --session <id> --commit [--transcript-dir] force-commit now
  *   node uploader.mjs --backfill                                 scan ~/.copilot/session-state/*
  *   node uploader.mjs --dry-run ...                              parse only, print extracted turns
  *
@@ -43,19 +44,22 @@ const SESSION_STATE_ROOT = join(homedir(), ".copilot", "session-state");
 function readConfig() {
   let url = process.env.OPENVIKING_URL || "";
   let apiKey = process.env.OPENVIKING_API_KEY || "";
+  let conf = {};
+  const confPath = process.env.OPENVIKING_CLI_CONFIG_FILE
+    || join(homedir(), ".openviking", "ovcli.conf");
+  try { conf = JSON.parse(readFileSync(confPath, "utf8")) || {}; } catch { /* fall through */ }
+  url = url || conf.url || "";
+  apiKey = apiKey || conf.api_key || "";
   if (!url || !apiKey) {
-    const confPath = process.env.OPENVIKING_CLI_CONFIG_FILE
-      || join(homedir(), ".openviking", "ovcli.conf");
-    try {
-      const conf = JSON.parse(readFileSync(confPath, "utf8"));
-      url = url || conf.url || "";
-      apiKey = apiKey || conf.api_key || "";
-    } catch { /* fall through to error below */ }
+    throw new Error(`No OpenViking credentials: set OPENVIKING_URL/OPENVIKING_API_KEY or ${confPath}`);
   }
-  if (!url || !apiKey) {
-    throw new Error(`No OpenViking credentials: set OPENVIKING_URL/OPENVIKING_API_KEY or ${join(homedir(), ".openviking", "ovcli.conf")}`);
-  }
-  return { url: url.replace(/\/+$/, ""), apiKey };
+  const plugin = conf.plugin && typeof conf.plugin === "object" ? conf.plugin : {};
+  const harness = plugin.agent_plugins && typeof plugin.agent_plugins === "object" ? plugin.agent_plugins : {};
+  const rawThreshold = process.env.OPENVIKING_COMMIT_TOKEN_THRESHOLD !== undefined && process.env.OPENVIKING_COMMIT_TOKEN_THRESHOLD !== ""
+    ? Number(process.env.OPENVIKING_COMMIT_TOKEN_THRESHOLD)
+    : Number(harness.commitTokenThreshold ?? plugin.commitTokenThreshold ?? 20000);
+  const commitTokenThreshold = Number.isFinite(rawThreshold) && rawThreshold > 0 ? rawThreshold : 20000;
+  return { url: url.replace(/\/+$/, ""), apiKey, commitTokenThreshold };
 }
 
 function log(...args) {
@@ -313,17 +317,37 @@ function toPayload(msg) {
   return payload;
 }
 
-async function uploadSession(cfg, sessionId, transcriptPath, cwd, { dryRun = false } = {}) {
+async function maybeCommit(cfg, ovSid, peerHeaders, { forceCommit = false } = {}) {
+  // A commit archives the session and runs extraction. PreCompact must always
+  // commit before the host rewrites history; a normal Stop run commits only
+  // once server-side pending-token pressure crosses the threshold.
+  try {
+    if (forceCommit) {
+      await ovRequest(cfg, "POST", `/api/v1/sessions/${encodeURIComponent(ovSid)}/commit`,
+        { keep_recent_count: 0 }, peerHeaders);
+      return true;
+    }
+    const meta = await ovRequest(cfg, "GET", `/api/v1/sessions/${encodeURIComponent(ovSid)}`, undefined, peerHeaders);
+    const pending = Number(meta?.result?.pending_tokens ?? meta?.pending_tokens ?? 0);
+    if (pending >= cfg.commitTokenThreshold) {
+      await ovRequest(cfg, "POST", `/api/v1/sessions/${encodeURIComponent(ovSid)}/commit`,
+        { keep_recent_count: 0 }, peerHeaders);
+      return true;
+    }
+    return false;
+  } catch (e) {
+    log(`session ${ovSid}: commit decision failed: ${e.message}`);
+    return false;
+  }
+}
+
+async function uploadSession(cfg, sessionId, transcriptPath, cwd, { dryRun = false, forceCommit = false } = {}) {
   const statePath = join(STATE_DIR, `${sessionId}.json`);
   let offset = 0;
   if (existsSync(statePath)) {
     try { offset = JSON.parse(readFileSync(statePath, "utf8")).byte_offset || 0; } catch { offset = 0; }
   }
   const { events, newOffset } = readEventsFrom(transcriptPath, offset);
-  if (!events.length) {
-    log(`session ${sessionId}: no new events (offset ${offset})`);
-    return { added: 0, committed: false };
-  }
   // Workspace peer: derived from the session cwd per the official client design
   // (.openviking/config.json peer.id > git origin > repo root; "" = user-level).
   const wsPeer = workspacePeerId(cwd);
@@ -336,31 +360,38 @@ async function uploadSession(cfg, sessionId, transcriptPath, cwd, { dryRun = fal
     for (const m of messages) console.log(`  ${m.role.padEnd(9)} peer=${m.peer_id} ${m.text.slice(0, 80).replace(/\n/g, " ")}`);
     return { added: messages.length, committed: false };
   }
-  if (!messages.length) {
+
+  const ovSid = ovSessionId(sessionId);
+  let added = 0;
+  let committed = false;
+
+  if (messages.length) {
+    await ensureSession(cfg, ovSid, peerHeaders);
+    for (let start = 0; start < messages.length; start += BATCH_CAP) {
+      const chunk = messages.slice(start, start + BATCH_CAP).map(toPayload);
+      const res = await ovRequest(cfg, "POST",
+        `/api/v1/sessions/${encodeURIComponent(ovSid)}/messages/batch`,
+        { messages: chunk }, peerHeaders);
+      added += Number((res && res.result && res.result.added) != null ? res.result.added : chunk.length);
+    }
+    committed = await maybeCommit(cfg, ovSid, peerHeaders, { forceCommit });
+    mkdirSync(STATE_DIR, { recursive: true });
+    writeFileSync(statePath, JSON.stringify({ byte_offset: newOffset }));
+    log(`session ${sessionId}: +${added} messages${committed ? ", committed" : ", pending (below commit threshold)"} (offset ${offset} -> ${newOffset})${wsPeer ? `, peer=${wsPeer}` : ""}`);
+  } else if (events.length) {
+    // Events parsed but no text turns — consume them so they are not re-read.
     mkdirSync(STATE_DIR, { recursive: true });
     writeFileSync(statePath, JSON.stringify({ byte_offset: newOffset }));
     log(`session ${sessionId}: ${events.length} events parsed, 0 text turns; cursor advanced`);
-    return { added: 0, committed: false };
+  } else if (forceCommit) {
+    // No new events, but PreCompact asks for a commit: archive what is pending.
+    committed = await maybeCommit(cfg, ovSid, peerHeaders, { forceCommit: true });
+    log(`session ${sessionId}: no new events${committed ? ", committed (PreCompact)" : ", commit skipped"}`);
+  } else {
+    log(`session ${sessionId}: no new events (offset ${offset})`);
   }
 
-  const ovSid = ovSessionId(sessionId);
-  await ensureSession(cfg, ovSid, peerHeaders);
-
-  let added = 0;
-  for (let start = 0; start < messages.length; start += BATCH_CAP) {
-    const chunk = messages.slice(start, start + BATCH_CAP).map(toPayload);
-    const res = await ovRequest(cfg, "POST",
-      `/api/v1/sessions/${encodeURIComponent(ovSid)}/messages/batch`,
-      { messages: chunk }, peerHeaders);
-    added += Number((res && res.result && res.result.added) != null ? res.result.added : chunk.length);
-  }
-  await ovRequest(cfg, "POST", `/api/v1/sessions/${encodeURIComponent(ovSid)}/commit`,
-    { keep_recent_count: 0 }, peerHeaders);
-
-  mkdirSync(STATE_DIR, { recursive: true });
-  writeFileSync(statePath, JSON.stringify({ byte_offset: newOffset }));
-  log(`session ${sessionId}: +${added} messages, committed (offset ${offset} -> ${newOffset})${wsPeer ? `, peer=${wsPeer}` : ""}`);
-  return { added, committed: true };
+  return { added, committed };
 }
 
 // ------------------------------------------------------------- driver -----
@@ -389,7 +420,10 @@ async function processQueue(cfg, { dryRun = false } = {}) {
     const { file } = transcriptDirFromQueueEntry(entry);
     if (!existsSync(file)) { log(`session ${sessionId}: transcript missing (${file})`); continue; }
     try {
-      const r = await uploadSession(cfg, sessionId, file, entry.cwd, { dryRun });
+      await uploadSession(cfg, sessionId, file, entry.cwd, {
+        dryRun,
+        forceCommit: entry.hook_event_name === "PreCompact",
+      });
       if (!dryRun) done.push(sessionId);
     } catch (e) {
       log(`session ${sessionId}: UPLOAD FAILED: ${e.message}`);
@@ -436,7 +470,7 @@ async function main() {
     const cwd = cIdx >= 0 ? args[cIdx + 1] : null;
     const file = /\.jsonl$/i.test(dir) ? dir : join(dir, "events.jsonl");
     if (!existsSync(file)) { log(`session ${sessionId}: transcript missing (${file})`); return; }
-    await uploadSession(cfg, sessionId, file, cwd, { dryRun });
+    await uploadSession(cfg, sessionId, file, cwd, { dryRun, forceCommit: args.includes("--commit") });
     return;
   }
   await processQueue(cfg, { dryRun });
